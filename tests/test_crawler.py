@@ -56,6 +56,30 @@ def test_extract_article_from_html_uses_entry_content_and_metadata():
     assert article['source_method'] == 'html_fallback'
 
 
+def test_extract_article_from_html_uses_current_tag_styles_body_only():
+    url = 'https://snowmagazin.relaxmagazin.sk/zopar-postrehov-ako-si-kupit-freeridove-lyze/'
+    html = '''
+    <html><head>
+      <link rel="canonical" href="https://snowmagazin.relaxmagazin.sk/zopar-postrehov-ako-si-kupit-freeridove-lyze/" />
+      <meta property="article:published_time" content="2009-11-04T00:00:00+01:00" />
+    </head><body class="single-post postid-10105">
+      <section class="single-article-detail-section">
+        <div class="single-article-detail-section__left">
+          <h1 class="heading heading--1">Zopár postrehov ako si kúpiť freeridové lyže</h1>
+          <p class="article_perex">Perex, ktorý nie je súčasťou tela.</p>
+          <div class="tag-styles"><p>Prvý publikovaný odsek.</p><p>Druhý publikovaný odsek.</p></div>
+        </div>
+      </section>
+      <div class="article_item__content"><p>Súvisiaci článok, ktorý sa nesmie dostať do tela.</p></div>
+    </body></html>
+    '''
+    article = extract_article_from_html(url, html)
+    assert article['published_date'].startswith('2009-11-04')
+    assert article['text'] == 'Prvý publikovaný odsek. Druhý publikovaný odsek.'
+    assert 'Súvisiaci článok' not in article['text']
+    assert 'Perex' not in article['text']
+
+
 def test_crawl_archives_rest_posts_skips_duplicate_url_and_records_fallback_error(tmp_path):
     base = 'https://snowmagazin.relaxmagazin.sk'
     endpoint = base + '/wp-json/wp/v2/posts'
