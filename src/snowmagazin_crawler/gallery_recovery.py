@@ -3,6 +3,7 @@ import csv
 import json
 import re
 import time
+import xml.etree.ElementTree as ET
 from collections import defaultdict
 from pathlib import Path
 from urllib.parse import urljoin, urlparse, urlunparse
@@ -21,6 +22,10 @@ LEGACY_BASES = (
 )
 IMAGE_RE = re.compile(r'\.(?:jpe?g|png|gif|webp)(?:\?.*)?$', re.I)
 GALLERY_PATH_RE = re.compile(r'/wp-content/gallery/([^/]+)/([^\s"\'<>?#]+\.(?:jpe?g|png|gif|webp))(?:\?[^\s"\'<>]*)?', re.I)
+MRSS_PATHS = (
+    '/wp-content/plugins/nextgen-gallery/xml/media-rss.php?gid={gid}&mode=gallery',
+    '/wp-content/plugins/nextgen-gallery/src/Legacy/xml/media-rss.php?gid={gid}&mode=gallery',
+)
 
 
 def _clean_url(url):
@@ -108,6 +113,33 @@ def extract_index_images(index_html, index_url):
     return found
 
 
+def extract_mrss_images(xml_text, base_url=BASE_URL):
+    text = xml_text or ''
+    found = []
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        root = None
+    if root is not None:
+        for element in root.iter():
+            local = element.tag.rsplit('}', 1)[-1].lower()
+            if local not in {'content', 'enclosure'}:
+                continue
+            raw = element.attrib.get('url') or element.attrib.get('href') or ''
+            if not raw:
+                continue
+            url = _clean_url(urljoin(base_url, raw))
+            if IMAGE_RE.search(urlparse(url).path) and '/wp-content/gallery/' in urlparse(url).path.lower():
+                _add_unique(found, url)
+    if not found:
+        for match in GALLERY_PATH_RE.finditer(text):
+            raw = match.group(0)
+            url = _clean_url(raw if raw.startswith('http') else urljoin(base_url, raw))
+            if '/thumbs/' not in urlparse(url).path.lower():
+                _add_unique(found, url)
+    return found
+
+
 def gallery_status(*, gallery_ids, folders, explicit_count, indexed_count,
                    downloaded_count, failed_count, indexable):
     if indexable:
@@ -145,6 +177,7 @@ def scan_archive(archive_root):
     id_to_folders = defaultdict(set)
     folder_to_urls = defaultdict(set)
     folder_to_articles = defaultdict(set)
+    id_to_articles = defaultdict(set)
 
     for metadata_path in sorted(archive_root.rglob('metadata.json')):
         article_dir = metadata_path.parent
@@ -160,6 +193,7 @@ def scan_archive(archive_root):
             continue
         for gid in evidence['gallery_ids']:
             all_ids.add(gid)
+            id_to_articles[gid].add(page_url)
         for gid, folder in evidence['id_folder_pairs']:
             id_to_folders[gid].add(folder)
         for folder in evidence['folders']:
@@ -181,6 +215,7 @@ def scan_archive(archive_root):
         'id_to_folders': id_to_folders,
         'folder_to_urls': folder_to_urls,
         'folder_to_articles': folder_to_articles,
+        'id_to_articles': id_to_articles,
     }
 
 
@@ -217,6 +252,34 @@ def _probe_folder(session, folder):
             })
         time.sleep(0.15)
     return probes, images, indexable
+
+
+def _probe_mrss(session, gallery_id):
+    probes = []
+    images = []
+    for base in LEGACY_BASES:
+        for path in MRSS_PATHS:
+            url = base.rstrip('/') + path.format(gid=gallery_id)
+            try:
+                response = session.get(url, timeout=35, allow_redirects=True)
+                body = response.text if response.status_code < 400 else ''
+                found = extract_mrss_images(body, response.url or url) if body else []
+                probes.append({
+                    'gallery_id': gallery_id, 'probe_url': url,
+                    'status_code': response.status_code, 'final_url': response.url or '',
+                    'images_found': len(found), 'error': '',
+                })
+                if found:
+                    images = found
+                    return probes, images
+            except Exception as exc:
+                probes.append({
+                    'gallery_id': gallery_id, 'probe_url': url,
+                    'status_code': '', 'final_url': '', 'images_found': 0,
+                    'error': f'{type(exc).__name__}: {exc}',
+                })
+            time.sleep(0.08)
+    return probes, images
 
 
 def _filename(url):
@@ -283,23 +346,47 @@ def recover_galleries(archive_root, output_dir='gallery_out'):
     session = requests.Session()
     session.headers.update({
         'User-Agent': 'Mozilla/5.0 (compatible; SnowmagazinGalleryArchive/1.0)',
-        'Accept': 'text/html,image/avif,image/webp,image/*,*/*;q=0.8',
+        'Accept': 'application/rss+xml,application/xml,text/xml,text/html,image/avif,image/webp,image/*,*/*;q=0.8',
         'Referer': BASE_URL + '/',
     })
+
+    mrss_probe_rows = []
+    id_to_mrss_urls = defaultdict(set)
+    folder_to_mrss_urls = defaultdict(set)
+    for gid in sorted(scan['all_ids']):
+        probes, urls = _probe_mrss(session, gid)
+        mrss_probe_rows.extend(probes)
+        for url in urls:
+            id_to_mrss_urls[gid].add(url)
+            match = GALLERY_PATH_RE.search(urlparse(url).path)
+            if match:
+                folder = match.group(1)
+                scan['id_to_folders'][gid].add(folder)
+                folder_to_mrss_urls[folder].add(url)
+                for article_url in scan['id_to_articles'].get(gid, set()):
+                    scan['folder_to_articles'][folder].add(article_url)
+        time.sleep(0.08)
 
     folder_rows = []
     probe_rows = []
     file_rows = []
-    folders = sorted(set(scan['folder_to_urls']) | set(scan['folder_to_articles']))
+    folders = sorted(
+        set(scan['folder_to_urls']) |
+        set(scan['folder_to_articles']) |
+        set(folder_to_mrss_urls)
+    )
 
     for folder in folders:
         probes, indexed_urls, indexable = _probe_folder(session, folder)
         probe_rows.extend(probes)
         explicit_urls = sorted(scan['folder_to_urls'].get(folder, set()))
+        mrss_urls = sorted(folder_to_mrss_urls.get(folder, set()))
+        enumerated_urls = []
+        for url in indexed_urls + mrss_urls:
+            _add_unique(enumerated_urls, url)
         urls = []
-        for url in indexed_urls + explicit_urls:
-            if url not in urls:
-                urls.append(url)
+        for url in enumerated_urls + explicit_urls:
+            _add_unique(urls, url)
 
         downloaded = 0
         failed = 0
@@ -315,19 +402,23 @@ def recover_galleries(archive_root, output_dir='gallery_out'):
             time.sleep(0.12)
 
         ids = sorted(gid for gid, mapped in scan['id_to_folders'].items() if folder in mapped)
+        complete_source = indexable or bool(mrss_urls)
         folder_rows.append({
             'folder': folder,
             'gallery_ids': ';'.join(str(x) for x in ids),
             'article_urls': ';'.join(sorted(scan['folder_to_articles'].get(folder, set()))),
             'explicit_count': len(explicit_urls),
             'indexed_count': len(indexed_urls),
+            'mrss_count': len(mrss_urls),
+            'enumerated_count': len(enumerated_urls),
             'downloaded_count': downloaded,
             'failed_count': failed,
             'indexable': indexable,
+            'mrss_available': bool(mrss_urls),
             'status': gallery_status(
                 gallery_ids=ids, folders=[folder], explicit_count=len(explicit_urls),
-                indexed_count=len(indexed_urls), downloaded_count=downloaded,
-                failed_count=failed, indexable=indexable,
+                indexed_count=len(enumerated_urls), downloaded_count=downloaded,
+                failed_count=failed, indexable=complete_source,
             ),
         })
 
@@ -337,18 +428,21 @@ def recover_galleries(archive_root, output_dir='gallery_out'):
         mapping_rows.append({
             'gallery_id': gid,
             'folders': ';'.join(mapped),
+            'mrss_images': len(id_to_mrss_urls.get(gid, set())),
             'status': 'mapped' if mapped else 'unresolved',
         })
 
     unresolved = [row for row in mapping_rows if row['status'] == 'unresolved']
     _write_csv(output_dir / 'gallery_recovery.csv', folder_rows,
-               ['folder','gallery_ids','article_urls','explicit_count','indexed_count','downloaded_count','failed_count','indexable','status'])
+               ['folder','gallery_ids','article_urls','explicit_count','indexed_count','mrss_count','enumerated_count','downloaded_count','failed_count','indexable','mrss_available','status'])
     _write_csv(output_dir / 'gallery_id_mapping.csv', mapping_rows,
-               ['gallery_id','folders','status'])
+               ['gallery_id','folders','mrss_images','status'])
     _write_csv(output_dir / 'unresolved_gallery_ids.csv', unresolved,
-               ['gallery_id','folders','status'])
+               ['gallery_id','folders','mrss_images','status'])
     _write_csv(output_dir / 'folder_probe.csv', probe_rows,
                ['folder','probe_url','status_code','final_url','indexable','images_found','error'])
+    _write_csv(output_dir / 'mrss_probe.csv', mrss_probe_rows,
+               ['gallery_id','probe_url','status_code','final_url','images_found','error'])
     _write_csv(output_dir / 'gallery_files.csv', file_rows,
                ['folder','status','source_url','resolved_url','path','bytes','error'])
 
@@ -357,8 +451,11 @@ def recover_galleries(archive_root, output_dir='gallery_out'):
         'gallery_ids_total': len(scan['all_ids']),
         'gallery_ids_mapped': sum(1 for row in mapping_rows if row['status'] == 'mapped'),
         'gallery_ids_unresolved': len(unresolved),
+        'mrss_gallery_ids_resolved': sum(1 for gid in scan['all_ids'] if id_to_mrss_urls.get(gid)),
+        'mrss_images_discovered': len({url for urls in id_to_mrss_urls.values() for url in urls}),
         'folders_total': len(folders),
         'folders_indexable': sum(1 for row in folder_rows if row['indexable']),
+        'folders_with_mrss': sum(1 for row in folder_rows if row['mrss_available']),
         'folders_complete': sum(1 for row in folder_rows if row['status'] == 'complete'),
         'folders_partial': sum(1 for row in folder_rows if row['status'] == 'partial'),
         'folders_missing': sum(1 for row in folder_rows if row['status'] == 'missing'),
