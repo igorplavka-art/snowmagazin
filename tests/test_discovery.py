@@ -84,3 +84,16 @@ def test_discover_article_urls_follows_category_pagination_and_deduplicates():
     assert discover_article_urls(session, base, max_pages=10) == [
         base + '/dva/', base + '/jeden/', base + '/tri/'
     ]
+
+
+def test_discover_article_urls_uses_sitemap_as_fast_path_without_archive_scan():
+    base = 'https://snowmagazin.relaxmagazin.sk'
+    session = FakeSession({
+        base + '/wp-sitemap.xml': FakeResponse(text='''<?xml version="1.0"?><urlset>
+          <url><loc>https://snowmagazin.relaxmagazin.sk/prvy-clanok/</loc></url>
+        </urlset>'''),
+        base + '/': FakeResponse(text='<a href="/druhy-clanok/">Should not be scanned</a>'),
+    })
+    assert discover_article_urls(session, base) == [base + '/prvy-clanok/']
+    called_urls = [url for url, _params in session.calls]
+    assert base + '/' not in called_urls

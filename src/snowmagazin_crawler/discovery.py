@@ -107,6 +107,9 @@ def discover_article_urls(session, base_url, max_pages=None):
             elif is_article_url(loc):
                 articles.add(loc)
 
+    if articles:
+        return sorted(articles)
+
     archive_queue = deque([base_url + '/'])
     archive_queue.extend(f'{base_url}/kategoria/{slug}/' for slug in KNOWN_CATEGORY_SLUGS)
     seen_pages = set()
