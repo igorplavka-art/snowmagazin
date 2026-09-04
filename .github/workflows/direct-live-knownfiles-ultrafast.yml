@@ -1,0 +1,210 @@
+name: Ultrafast known-file NextGEN recovery
+
+on:
+  push:
+    branches: [crawler-v1]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  recover:
+    if: contains(github.event.head_commit.message, '[direct-live-ultrafast]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.txt
+      - name: Run tests
+        env:
+          PYTHONPATH: src
+        run: pytest -q
+      - name: Download global folder index
+        uses: actions/download-artifact@v4
+        with:
+          name: wayback-gallery-folders-33899806543
+          path: global_index
+          repository: igorplavka-art/snowmagazin
+          run-id: 33899806543
+          github-token: ${{ github.token }}
+      - name: Download article folder map
+        uses: actions/download-artifact@v4
+        with:
+          name: wayback-article-gallery-map-33900426871
+          path: article_map
+          repository: igorplavka-art/snowmagazin
+          run-id: 33900426871
+          github-token: ${{ github.token }}
+      - name: Download article corpus
+        uses: actions/download-artifact@v4
+        with:
+          name: snowmagazin-archive-full-33882322286
+          path: article_input
+          repository: igorplavka-art/snowmagazin
+          run-id: 33882322286
+          github-token: ${{ github.token }}
+      - name: Extract corpus
+        run: |
+          mkdir -p article_archive
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          with ZipFile(Path('article_input/snowmagazin-archive.zip')) as z:
+              z.extractall('article_archive')
+          PY
+      - name: Fetch exact known files from live hosts
+        env:
+          PYTHONPATH: src
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv, hashlib, json, re, threading
+          from collections import defaultdict
+          from concurrent.futures import ThreadPoolExecutor, as_completed
+          from pathlib import Path
+          from urllib.parse import unquote
+          import requests
+          from snowmagazin_crawler.media import _looks_like_image
+
+          HOSTS = [
+              'https://snowmagazin.relaxmagazin.sk',
+              'https://relaxmagazin.sk',
+              'https://www.snowmagazin.sk',
+              'http://www.snowmagazin.sk',
+          ]
+          REF = re.compile(r'/wp-content/gallery/([^/]+)/([^\"\'<>\s?#]+\.(?:jpe?g|png|gif|webp))', re.I)
+          IMG = re.compile(r'\.(?:jpe?g|png|gif|webp)$', re.I)
+          folders=set(); paths=defaultdict(set)
+
+          fp=Path('global_index/gallery_folders.csv')
+          if fp.exists():
+              with fp.open(encoding='utf-8') as f:
+                  for r in csv.DictReader(f):
+                      folder=r.get('folder','').strip()
+                      if folder: folders.add(folder)
+          fp=Path('global_index/gallery_files.csv')
+          if fp.exists():
+              with fp.open(encoding='utf-8') as f:
+                  for r in csv.DictReader(f):
+                      folder=r.get('folder','').strip(); rel=unquote(r.get('relative_path','')).lstrip('/')
+                      if folder: folders.add(folder)
+                      if folder and rel and IMG.search(rel): paths[folder].add(rel)
+          fp=Path('article_map/new_id_folder_mapping.csv')
+          if fp.exists():
+              with fp.open(encoding='utf-8') as f:
+                  for r in csv.DictReader(f):
+                      for folder in r.get('folders','').split(';'):
+                          folder=folder.strip()
+                          if folder: folders.add(folder)
+          for p in Path('article_archive').rglob('*'):
+              if not p.is_file() or p.suffix.lower() not in {'.html','.json','.txt'}: continue
+              try: text=p.read_text(encoding='utf-8',errors='ignore')
+              except Exception: continue
+              for m in REF.finditer(text):
+                  folder=m.group(1); rel=unquote(m.group(2)).lstrip('/')
+                  folders.add(folder); paths[folder].add(rel)
+          for folder in list(folders):
+              for rel in list(paths[folder]):
+                  low=rel.lower()
+                  if low.startswith('thumbs/thumbs_'): paths[folder].add(rel.split('/',1)[1][7:])
+                  elif low.startswith('backup/'): paths[folder].add(rel.split('/',1)[1])
+
+          jobs=[(f,r) for f in sorted(folders) for r in sorted(paths[f])]
+          root=Path('ultrafast/files'); root.mkdir(parents=True,exist_ok=True)
+          local=threading.local()
+          def sess():
+              if not hasattr(local,'s'):
+                  local.s=requests.Session(); local.s.headers.update({'User-Agent':'SnowmagazinArchiveRecovery/1.0','Accept':'image/*,*/*;q=0.8'})
+              return local.s
+          def safe(rel):
+              return Path(*[re.sub(r'[^A-Za-z0-9._ -]+','_',x) for x in Path(rel).parts if x not in ('','.','..')])
+          def fetch(job):
+              folder,rel=job; attempts=[]
+              for host in HOSTS:
+                  url=f'{host}/wp-content/gallery/{folder}/{rel}'
+                  try:
+                      r=sess().get(url,timeout=(5,10),allow_redirects=True)
+                      attempts.append(f'{url} -> {r.status_code}')
+                      if r.status_code>=400 or not _looks_like_image(r.content,r.headers.get('Content-Type','')): continue
+                      dest=root/folder/safe(rel); dest.parent.mkdir(parents=True,exist_ok=True); dest.write_bytes(r.content)
+                      return {'folder':folder,'relative_path':rel,'status':'ok','resolved_url':r.url,'bytes':len(r.content),'sha256':hashlib.sha256(r.content).hexdigest(),'attempts':' | '.join(attempts)}
+                  except Exception as e:
+                      attempts.append(f'{url} -> {type(e).__name__}: {e}')
+              return {'folder':folder,'relative_path':rel,'status':'error','resolved_url':'','bytes':0,'sha256':'','attempts':' | '.join(attempts)}
+
+          results=[]
+          with ThreadPoolExecutor(max_workers=16) as ex:
+              futures=[ex.submit(fetch,j) for j in jobs]
+              for i,f in enumerate(as_completed(futures),1):
+                  results.append(f.result())
+                  if i%50==0:
+                      print('checked',i,'/',len(futures),'ok',sum(x['status']=='ok' for x in results),flush=True)
+
+          by=defaultdict(list)
+          for r in results: by[r['folder']].append(r)
+          out=Path('ultrafast'); out.mkdir(exist_ok=True)
+          fields=['folder','relative_path','status','resolved_url','bytes','sha256','attempts']
+          with (out/'files_manifest.csv').open('w',encoding='utf-8',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=fields); w.writeheader(); w.writerows(sorted(results,key=lambda x:(x['folder'],x['relative_path'])))
+          with (out/'folder_status.csv').open('w',encoding='utf-8',newline='') as f:
+              fields2=['folder','known_paths','downloaded','failed','unique_hashes','status']; w=csv.DictWriter(f,fieldnames=fields2); w.writeheader()
+              for folder in sorted(folders):
+                  rr=by[folder]; ok=[x for x in rr if x['status']=='ok']; fail=len(rr)-len(ok); hashes={x['sha256'] for x in ok}
+                  status='recovered' if ok and fail==0 else ('partial' if ok else 'missing')
+                  w.writerow({'folder':folder,'known_paths':len(paths[folder]),'downloaded':len(ok),'failed':fail,'unique_hashes':len(hashes),'status':status})
+          summary={
+              'folders_requested':len(folders),
+              'folders_with_known_paths':sum(bool(paths[f]) for f in folders),
+              'candidate_paths':len(jobs),
+              'files_downloaded':sum(r['status']=='ok' for r in results),
+              'files_failed':sum(r['status']!='ok' for r in results),
+              'folders_with_files':sum(any(x['status']=='ok' for x in by[f]) for f in folders),
+              'folders_missing':sum(not any(x['status']=='ok' for x in by[f]) for f in folders),
+              'unique_hashes':len({r['sha256'] for r in results if r['sha256']}),
+          }
+          (out/'summary.json').write_text(json.dumps(summary,ensure_ascii=False,indent=2),encoding='utf-8')
+          print(json.dumps(summary),flush=True)
+          PY
+      - name: Pack files
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import zipfile
+          root=Path('ultrafast/files'); out=Path('ultrafast_parts'); out.mkdir(exist_ok=True)
+          files=sorted(p for p in root.rglob('*') if p.is_file()) if root.exists() else []
+          limit=60*1024*1024; groups=[]; cur=[]; size=0
+          for p in files:
+              n=p.stat().st_size
+              if cur and size+n>limit: groups.append(cur); cur=[]; size=0
+              cur.append(p); size+=n
+          if cur: groups.append(cur)
+          for i,g in enumerate(groups,1):
+              zpath=out/f'snowmagazin-live-nextgen-ultrafast-part{i:02d}.zip'
+              with zipfile.ZipFile(zpath,'w',compression=zipfile.ZIP_STORED,allowZip64=True) as z:
+                  for p in g: z.write(p,p.relative_to(root))
+              print(zpath,zpath.stat().st_size)
+          print('parts',len(groups),'files',len(files))
+          PY
+      - name: Upload manifests
+        uses: actions/upload-artifact@v4
+        with:
+          name: direct-live-nextgen-ultrafast-manifests-${{ github.run_id }}
+          path: |
+            ultrafast/files_manifest.csv
+            ultrafast/folder_status.csv
+            ultrafast/summary.json
+          retention-days: 90
+      - name: Upload files
+        uses: actions/upload-artifact@v4
+        with:
+          name: direct-live-nextgen-ultrafast-files-${{ github.run_id }}
+          path: ultrafast_parts/*.zip
+          compression-level: 0
+          retention-days: 90
+          if-no-files-found: warn
