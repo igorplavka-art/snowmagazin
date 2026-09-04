@@ -52,7 +52,7 @@ jobs:
         run: |
           set -euo pipefail
           python - <<'PY'
-          import csv, json, re, time
+          import csv, json
           from collections import defaultdict
           from concurrent.futures import ThreadPoolExecutor, as_completed
           from pathlib import Path
@@ -60,7 +60,7 @@ jobs:
           import requests
 
           from snowmagazin_crawler.gallery_recovery import scan_archive
-          from snowmagazin_crawler.wayback_recovery import query_cdx, wayback_raw_url, extract_snapshot_folders
+          from snowmagazin_crawler.wayback_recovery import query_cdx, wayback_raw_url, extract_wayback_snapshot_folders
 
           root = Path('article_archive/out/archive')
           scan = scan_archive(root)
@@ -102,7 +102,6 @@ jobs:
                   if not parts: continue
                   slug=parts[-1].lower()
                   candidates=by_slug.get(slug, [])
-                  # also tolerate a current slug embedded in a dated old path
                   if not candidates:
                       candidates=[r for r in all_pages if slug and slug in urlparse(r['original']).path.lower()]
                   for row in candidates[:6]:
@@ -113,7 +112,7 @@ jobs:
               snap=wayback_raw_url(row)
               try:
                   r=requests.get(snap, timeout=45, allow_redirects=True, headers={'User-Agent':'SnowmagazinArchiveRecovery/1.0'})
-                  folders=extract_snapshot_folders(r.text if r.status_code < 400 else '')
+                  folders=extract_wayback_snapshot_folders(r.text if r.status_code < 400 else '')
                   return {'gallery_id':gid,'article_url':article_url,'slug':slug,'archived_url':row.get('original',''),'timestamp':row.get('timestamp',''),'snapshot_url':snap,'http_status':r.status_code,'folders':folders,'error':''}
               except Exception as e:
                   return {'gallery_id':gid,'article_url':article_url,'slug':slug,'archived_url':row.get('original',''),'timestamp':row.get('timestamp',''),'snapshot_url':snap,'http_status':'','folders':[],'error':f'{type(e).__name__}: {e}'}
