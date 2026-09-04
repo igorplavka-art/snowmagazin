@@ -1,6 +1,7 @@
 from snowmagazin_crawler.gallery_recovery import (
     extract_gallery_evidence,
     extract_index_images,
+    extract_mrss_images,
     gallery_status,
 )
 
@@ -41,6 +42,20 @@ def test_extract_index_images_returns_originals_and_skips_parent_and_thumbs():
     assert urls == [
         'https://snowmagazin.relaxmagazin.sk/wp-content/gallery/test/1.jpg',
         'https://snowmagazin.relaxmagazin.sk/wp-content/gallery/test/two.JPG',
+    ]
+
+
+def test_extract_mrss_images_recovers_full_gallery_urls_and_ignores_thumbnails():
+    xml = '''<?xml version="1.0"?>
+    <rss xmlns:media="http://search.yahoo.com/mrss/"><channel><item>
+      <media:content url="http://www.snowmagazin.sk/wp-content/gallery/elbrus/01.jpg" type="image/jpeg" />
+      <media:thumbnail url="http://www.snowmagazin.sk/wp-content/gallery/elbrus/thumbs/thumbs_01.jpg" />
+      <enclosure url="http://www.snowmagazin.sk/wp-content/gallery/elbrus/02.jpg" type="image/jpeg" />
+    </item></channel></rss>'''
+    urls = extract_mrss_images(xml, 'https://snowmagazin.relaxmagazin.sk/')
+    assert urls == [
+        'http://www.snowmagazin.sk/wp-content/gallery/elbrus/01.jpg',
+        'http://www.snowmagazin.sk/wp-content/gallery/elbrus/02.jpg',
     ]
 
 
