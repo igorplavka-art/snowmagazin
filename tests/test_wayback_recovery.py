@@ -1,4 +1,5 @@
 from snowmagazin_crawler.wayback_recovery import (
+    article_url_variants,
     build_cdx_url,
     select_image_snapshot,
     wayback_raw_url,
@@ -48,3 +49,15 @@ def test_wayback_replay_candidates_try_raw_then_image_then_standard_replay():
         'https://web.archive.org/web/20161212000000im_/http://www.snowmagazin.sk/wp-content/gallery/elbrus/01.jpg',
         'https://web.archive.org/web/20161212000000/http://www.snowmagazin.sk/wp-content/gallery/elbrus/01.jpg',
     ]
+
+
+def test_article_url_variants_include_legacy_wp_post_id_permalink():
+    variants = article_url_variants(
+        'https://snowmagazin.relaxmagazin.sk/appka-hzs-umoznuje-lokalizaciu-aj-nudzovu-sms/',
+        '2015-11-18T00:00:00',
+        post_id=11225,
+    )
+    assert 'http://www.snowmagazin.sk/?p=11225' in variants
+    assert 'https://www.snowmagazin.sk/?p=11225' in variants
+    assert 'http://snowmagazin.sk/?p=11225' in variants
+    assert 'https://snowmagazin.sk/?p=11225' in variants
