@@ -1,4 +1,5 @@
 import json
+import re
 import time
 from pathlib import Path
 from urllib.parse import urlparse
@@ -55,6 +56,16 @@ def _jsonld_date(soup):
     return ''
 
 
+def _post_id_from_body(soup):
+    if soup.body is None:
+        return None
+    for class_name in soup.body.get('class', []):
+        match = re.fullmatch(r'postid-(\d+)', class_name)
+        if match:
+            return int(match.group(1))
+    return None
+
+
 def extract_article_from_html(url, page_html):
     soup = BeautifulSoup(page_html or '', 'html.parser')
     canonical_tag = soup.find('link', rel=lambda value: value and 'canonical' in value)
@@ -73,6 +84,7 @@ def extract_article_from_html(url, page_html):
 
     content = None
     for selector in (
+        '.tag-styles',
         '.entry-content', '.post-content', '.td-post-content', '.article-content',
         '.single-post-content', '.post-entry', 'article .content',
     ):
@@ -97,10 +109,10 @@ def extract_article_from_html(url, page_html):
         published = _jsonld_date(soup)
     modified = _meta_content(soup, property_name='article:modified_time')
 
-    author = _meta_content(soup, name='author')
+    visible_author = soup.select_one('[rel="author"], .author-name, .post-author-name')
+    author = visible_author.get_text(' ', strip=True) if visible_author else ''
     if not author:
-        author_tag = soup.select_one('[rel="author"], .author-name, .post-author-name')
-        author = author_tag.get_text(' ', strip=True) if author_tag else ''
+        author = _meta_content(soup, name='author')
 
     category_names = []
     tag_names = []
@@ -119,7 +131,7 @@ def extract_article_from_html(url, page_html):
     path_slug = urlparse(canonical).path.strip('/').split('/')[-1]
     slug = safe_slug(path_slug or title)
     return {
-        'id': None,
+        'id': _post_id_from_body(soup),
         'published_date': published,
         'modified_date': modified,
         'url': canonical,
@@ -205,12 +217,15 @@ def crawl(*, session=None, base_url=DEFAULT_BASE_URL, output_dir='out', limit=No
                 if status >= 400:
                     raise RuntimeError(f'HTTP {status}')
                 article = extract_article_from_html(url, getattr(response, 'text', '') or '')
+                post_id = article.get('id')
                 canonical_key = _normalize_url(article.get('url'))
-                if canonical_key and canonical_key in seen_urls:
+                if (post_id is not None and post_id in seen_ids) or (canonical_key and canonical_key in seen_urls):
                     seen_urls.add(url_key)
                     continue
                 rows.append(write_article(article, output_dir))
                 ok_count += 1
+                if post_id is not None:
+                    seen_ids.add(post_id)
                 seen_urls.add(url_key)
                 if canonical_key:
                     seen_urls.add(canonical_key)
