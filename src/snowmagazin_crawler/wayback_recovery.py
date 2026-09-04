@@ -217,16 +217,21 @@ def _article_records(archive_root):
         if not parsed_ids:
             continue
         published = str(metadata.get('published_date') or metadata.get('date') or '')
+        try:
+            post_id = int(metadata.get('id'))
+        except (TypeError, ValueError):
+            post_id = None
         records.append({
             'ids': parsed_ids,
             'url': str(metadata.get('url') or ''),
             'published_date': published,
+            'post_id': post_id,
             'title': str(metadata.get('title') or ''),
         })
     return records
 
 
-def article_url_variants(url, published_date=''):
+def article_url_variants(url, published_date='', post_id=None):
     parsed = urlparse(url)
     slug = parsed.path.strip('/').split('/')[-1] if parsed.path.strip('/') else ''
     variants = []
@@ -237,6 +242,10 @@ def article_url_variants(url, published_date=''):
     for scheme in ('http', 'https'):
         for host in ('www.snowmagazin.sk', 'snowmagazin.sk'):
             add(urlunparse((scheme, host, parsed.path or '/', '', '', '')))
+    if post_id:
+        for scheme in ('http', 'https'):
+            for host in ('www.snowmagazin.sk', 'snowmagazin.sk'):
+                add(urlunparse((scheme, host, '/', '', f'p={int(post_id)}', '')))
     match = re.match(r'(\d{4})-(\d{2})', published_date)
     if match and slug:
         year, month = match.groups()
@@ -271,7 +280,7 @@ def map_gallery_ids_from_wayback(session, archive_root):
         if not unresolved:
             continue
         resolved_record = False
-        for candidate in article_url_variants(record['url'], record['published_date']):
+        for candidate in article_url_variants(record['url'], record['published_date'], record.get('post_id')):
             captures, query_meta = query_cdx(session, candidate, 'exact', image_only=False, limit=20)
             query_rows.append({
                 'kind': 'article', 'gallery_ids': ';'.join(map(str, record['ids'])),
