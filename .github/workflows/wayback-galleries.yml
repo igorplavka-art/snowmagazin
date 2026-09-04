@@ -1,0 +1,73 @@
+name: Recover Snowmagazin galleries via Wayback
+
+on:
+  push:
+    branches:
+      - crawler-v1
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  index:
+    if: contains(github.event.head_commit.message, '[wayback]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run tests
+        env:
+          PYTHONPATH: src
+        run: pytest -q
+
+      - name: Download archived article corpus
+        uses: actions/download-artifact@v4
+        with:
+          name: snowmagazin-archive-full-33882322286
+          path: article_input
+          repository: igorplavka-art/snowmagazin
+          run-id: 33882322286
+          github-token: ${{ github.token }}
+
+      - name: Extract article archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p article_archive
+          python - <<'PY'
+          from pathlib import Path
+          import zipfile
+          inner = Path('article_input/snowmagazin-archive.zip')
+          with zipfile.ZipFile(inner) as zf:
+              zf.extractall('article_archive')
+          print('metadata', len(list(Path('article_archive/out/archive').rglob('metadata.json'))))
+          PY
+
+      - name: Index Wayback NextGEN evidence
+        env:
+          PYTHONPATH: src
+        run: |
+          python -m snowmagazin_crawler.wayback_recovery \
+            --archive-root article_archive/out/archive \
+            --output wayback_out | tee wayback-run-summary.json
+
+      - name: Upload Wayback gallery index
+        uses: actions/upload-artifact@v4
+        with:
+          name: wayback-gallery-index-${{ github.run_id }}
+          path: |
+            wayback_out/
+            wayback-run-summary.json
+          retention-days: 90
+          if-no-files-found: error
