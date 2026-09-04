@@ -14,6 +14,8 @@ on:
         options:
           - smoke
           - full
+          - media-smoke
+          - media-full
   issues:
     types:
       - opened
@@ -25,7 +27,7 @@ jobs:
   crawl:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || startsWith(github.event.issue.title, '[snowmagazin-crawl]')
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     env:
       ISSUE_TITLE: ${{ github.event.issue.title }}
       DISPATCH_MODE: ${{ inputs.mode }}
@@ -55,13 +57,21 @@ jobs:
           set -euo pipefail
           MODE="${DISPATCH_MODE:-smoke}"
           if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
-            if [[ "${COMMIT_MESSAGE}" == *"[full]"* ]]; then
+            if [[ "${COMMIT_MESSAGE}" == *"[media-full]"* ]]; then
+              MODE="media-full"
+            elif [[ "${COMMIT_MESSAGE}" == *"[media-smoke]"* ]]; then
+              MODE="media-smoke"
+            elif [[ "${COMMIT_MESSAGE}" == *"[full]"* ]]; then
               MODE="full"
             else
               MODE="smoke"
             fi
           elif [[ "${GITHUB_EVENT_NAME}" == "issues" ]]; then
-            if [[ "${ISSUE_TITLE}" == *" full"* || "${ISSUE_TITLE}" == *"[full]"* ]]; then
+            if [[ "${ISSUE_TITLE}" == *"media-full"* ]]; then
+              MODE="media-full"
+            elif [[ "${ISSUE_TITLE}" == *"media-smoke"* ]]; then
+              MODE="media-smoke"
+            elif [[ "${ISSUE_TITLE}" == *" full"* || "${ISSUE_TITLE}" == *"[full]"* ]]; then
               MODE="full"
             else
               MODE="smoke"
@@ -70,7 +80,8 @@ jobs:
           echo "mode=${MODE}" >> "$GITHUB_OUTPUT"
           echo "Crawl mode: ${MODE}"
 
-      - name: Crawl
+      - name: Crawl articles
+        if: steps.mode.outputs.mode == 'smoke' || steps.mode.outputs.mode == 'full'
         env:
           PYTHONPATH: src
           CRAWL_MODE: ${{ steps.mode.outputs.mode }}
@@ -83,10 +94,26 @@ jobs:
             python -m snowmagazin_crawler --output out --limit 10 --delay 0.05 | tee crawl-summary.json
           fi
 
-      - name: Package archive
+      - name: Crawl media
+        if: steps.mode.outputs.mode == 'media-smoke' || steps.mode.outputs.mode == 'media-full'
+        env:
+          PYTHONPATH: src
+          CRAWL_MODE: ${{ steps.mode.outputs.mode }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${CRAWL_MODE}" == "media-full" ]]; then
+            python -m snowmagazin_crawler.media --output media_out --workers 6 | tee media-run-summary.json
+          else
+            python -m snowmagazin_crawler.media --output media_out --limit 10 --workers 4 | tee media-run-summary.json
+          fi
+
+      - name: Package article archive
+        if: steps.mode.outputs.mode == 'smoke' || steps.mode.outputs.mode == 'full'
         run: zip -qr snowmagazin-archive.zip out/archive out/articles.csv crawl-summary.json
 
-      - name: Upload archive artifact
+      - name: Upload article archive artifact
+        if: steps.mode.outputs.mode == 'smoke' || steps.mode.outputs.mode == 'full'
         uses: actions/upload-artifact@v4
         with:
           name: snowmagazin-archive-${{ steps.mode.outputs.mode }}-${{ github.run_id }}
@@ -94,5 +121,112 @@ jobs:
             snowmagazin-archive.zip
             out/articles.csv
             crawl-summary.json
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload media smoke artifact
+        if: steps.mode.outputs.mode == 'media-smoke'
+        uses: actions/upload-artifact@v4
+        with:
+          name: snowmagazin-media-smoke-${{ github.run_id }}
+          path: |
+            media_out/
+            media-run-summary.json
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload media 2009-2011
+        if: steps.mode.outputs.mode == 'media-full'
+        uses: actions/upload-artifact@v4
+        with:
+          name: snowmagazin-media-2009-2011-${{ github.run_id }}
+          path: |
+            media_out/articles/2009/
+            media_out/articles/2010/
+            media_out/articles/2011/
+            media_out/articles/unknown/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload media 2012-2014
+        if: steps.mode.outputs.mode == 'media-full'
+        uses: actions/upload-artifact@v4
+        with:
+          name: snowmagazin-media-2012-2014-${{ github.run_id }}
+          path: |
+            media_out/articles/2012/
+            media_out/articles/2013/
+            media_out/articles/2014/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload media 2015-2017
+        if: steps.mode.outputs.mode == 'media-full'
+        uses: actions/upload-artifact@v4
+        with:
+          name: snowmagazin-media-2015-2017-${{ github.run_id }}
+          path: |
+            media_out/articles/2015/
+            media_out/articles/2016/
+            media_out/articles/2017/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload media 2018-2020
+        if: steps.mode.outputs.mode == 'media-full'
+        uses: actions/upload-artifact@v4
+        with:
+          name: snowmagazin-media-2018-2020-${{ github.run_id }}
+          path: |
+            media_out/articles/2018/
+            media_out/articles/2019/
+            media_out/articles/2020/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload media 2021-2023
+        if: steps.mode.outputs.mode == 'media-full'
+        uses: actions/upload-artifact@v4
+        with:
+          name: snowmagazin-media-2021-2023-${{ github.run_id }}
+          path: |
+            media_out/articles/2021/
+            media_out/articles/2022/
+            media_out/articles/2023/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload media 2024-2026
+        if: steps.mode.outputs.mode == 'media-full'
+        uses: actions/upload-artifact@v4
+        with:
+          name: snowmagazin-media-2024-2026-${{ github.run_id }}
+          path: |
+            media_out/articles/2024/
+            media_out/articles/2025/
+            media_out/articles/2026/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload reconstructed galleries
+        if: steps.mode.outputs.mode == 'media-full'
+        uses: actions/upload-artifact@v4
+        with:
+          name: snowmagazin-nextgen-galleries-${{ github.run_id }}
+          path: media_out/galleries/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload media manifests
+        if: steps.mode.outputs.mode == 'media-full'
+        uses: actions/upload-artifact@v4
+        with:
+          name: snowmagazin-media-manifests-${{ github.run_id }}
+          path: |
+            media_out/media_files.csv
+            media_out/gallery_status.csv
+            media_out/failures.csv
+            media_out/media-summary.json
+            media-run-summary.json
           retention-days: 30
           if-no-files-found: error
