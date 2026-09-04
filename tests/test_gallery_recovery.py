@@ -2,9 +2,11 @@ from snowmagazin_crawler.gallery_recovery import (
     extract_gallery_evidence,
     extract_index_images,
     extract_mrss_images,
+    gallery_status,
+)
+from snowmagazin_crawler.wayback_recovery import (
     extract_wayback_snapshot_folders,
     parse_cdx_rows,
-    gallery_status,
 )
 
 
