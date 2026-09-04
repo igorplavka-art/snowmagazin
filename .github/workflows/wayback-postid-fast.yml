@@ -1,0 +1,274 @@
+name: Fast Wayback WordPress post-ID recovery
+
+on:
+  push:
+    branches:
+      - crawler-v1
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  recover:
+    if: contains(github.event.head_commit.message, '[wayback-postid]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run tests
+        env:
+          PYTHONPATH: src
+        run: pytest -q
+
+      - name: Download article corpus
+        uses: actions/download-artifact@v4
+        with:
+          name: snowmagazin-archive-full-33882322286
+          path: article_input
+          repository: igorplavka-art/snowmagazin
+          run-id: 33882322286
+          github-token: ${{ github.token }}
+
+      - name: Download prior Wayback mapping
+        uses: actions/download-artifact@v4
+        with:
+          name: wayback-article-gallery-map-33900426871
+          path: prior_map
+          repository: igorplavka-art/snowmagazin
+          run-id: 33900426871
+          github-token: ${{ github.token }}
+
+      - name: Extract corpus
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p article_archive
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          with ZipFile(Path('article_input/snowmagazin-archive.zip')) as zf:
+              zf.extractall('article_archive')
+          PY
+
+      - name: Recover unresolved IDs through legacy ?p=post_id URLs
+        env:
+          PYTHONPATH: src
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv
+          import json
+          from collections import defaultdict
+          from concurrent.futures import ThreadPoolExecutor, as_completed
+          from pathlib import Path
+          import requests
+
+          from snowmagazin_crawler.wayback_recovery import (
+              _article_records,
+              article_url_variants,
+              extract_wayback_gallery_pairs,
+              extract_wayback_snapshot_folders,
+              query_cdx,
+              wayback_raw_url,
+          )
+
+          records = _article_records('article_archive/out/archive')
+          all_ids = sorted({gid for record in records for gid in record['ids']})
+
+          already_mapped = set()
+          prior_path = Path('prior_map/new_id_folder_mapping.csv')
+          if prior_path.exists():
+              with prior_path.open(encoding='utf-8') as fh:
+                  for row in csv.DictReader(fh):
+                      try:
+                          already_mapped.add(int(row['gallery_id']))
+                      except Exception:
+                          pass
+
+          # Also mark IDs whose current archived HTML already exposes a folder.
+          from snowmagazin_crawler.gallery_recovery import scan_archive
+          scan = scan_archive('article_archive/out/archive')
+          for gid, folders in scan['id_to_folders'].items():
+              if folders:
+                  already_mapped.add(int(gid))
+
+          targets = []
+          ids_without_post_id = set()
+          for record in records:
+              unresolved = [gid for gid in record['ids'] if gid not in already_mapped]
+              if not unresolved:
+                  continue
+              post_id = record.get('post_id')
+              if not post_id:
+                  ids_without_post_id.update(unresolved)
+                  continue
+              variants = [
+                  url for url in article_url_variants(record['url'], record['published_date'], post_id)
+                  if f'?p={post_id}' in url
+              ]
+              targets.append({**record, 'unresolved_ids': unresolved, 'variants': variants})
+
+          def fetch_record(record):
+              session = requests.Session()
+              session.headers.update({'User-Agent': 'SnowmagazinArchiveRecovery/1.0'})
+              result = {
+                  'post_id': record.get('post_id'),
+                  'article_url': record['url'],
+                  'gallery_ids': record['unresolved_ids'],
+                  'matched_url': '',
+                  'timestamp': '',
+                  'folders': [],
+                  'direct_pairs': {},
+                  'method': '',
+                  'error': '',
+                  'queries': [],
+              }
+              for variant in record['variants']:
+                  captures, meta = query_cdx(session, variant, 'exact', image_only=False, limit=25)
+                  result['queries'].append({'target': variant, 'captures': len(captures), **meta})
+                  if not captures:
+                      continue
+                  # newest-first, but try several because old NextGEN rendering may vary
+                  for capture in sorted(captures, key=lambda row: row.get('timestamp', ''), reverse=True)[:8]:
+                      snapshot = wayback_raw_url(capture)
+                      try:
+                          response = session.get(snapshot, timeout=60, allow_redirects=True)
+                      except Exception as exc:
+                          result['error'] = f'{type(exc).__name__}: {exc}'
+                          continue
+                      if response.status_code >= 400:
+                          result['error'] = f'HTTP {response.status_code}'
+                          continue
+                      html = response.text
+                      pairs = extract_wayback_gallery_pairs(html)
+                      direct = {
+                          int(gid): folders
+                          for gid, folders in pairs.items()
+                          if int(gid) in record['unresolved_ids'] and folders
+                      }
+                      if direct:
+                          result.update({
+                              'matched_url': variant,
+                              'timestamp': capture.get('timestamp', ''),
+                              'folders': sorted({folder for folders in direct.values() for folder in folders}),
+                              'direct_pairs': direct,
+                              'method': 'ngg_container',
+                              'error': '',
+                          })
+                          return result
+                      folders = extract_wayback_snapshot_folders(html)
+                      if len(record['unresolved_ids']) == 1 and folders:
+                          result.update({
+                              'matched_url': variant,
+                              'timestamp': capture.get('timestamp', ''),
+                              'folders': folders,
+                              'direct_pairs': {record['unresolved_ids'][0]: folders},
+                              'method': 'single_id_page',
+                              'error': '',
+                          })
+                          return result
+              return result
+
+          results = []
+          with ThreadPoolExecutor(max_workers=6) as executor:
+              futures = [executor.submit(fetch_record, record) for record in targets]
+              for i, future in enumerate(as_completed(futures), 1):
+                  results.append(future.result())
+                  if i % 25 == 0:
+                      print('post-id records', i, '/', len(futures), flush=True)
+
+          id_to_folders = defaultdict(set)
+          id_to_method = defaultdict(set)
+          for result in results:
+              for gid, folders in result['direct_pairs'].items():
+                  for folder in folders:
+                      id_to_folders[int(gid)].add(folder)
+                  if result['method']:
+                      id_to_method[int(gid)].add(result['method'])
+
+          output = Path('wayback_postid')
+          output.mkdir(exist_ok=True)
+
+          with (output / 'postid_mapping.csv').open('w', encoding='utf-8', newline='') as fh:
+              fields = ['gallery_id', 'folders', 'method']
+              writer = csv.DictWriter(fh, fieldnames=fields)
+              writer.writeheader()
+              for gid in sorted(id_to_folders):
+                  writer.writerow({
+                      'gallery_id': gid,
+                      'folders': ';'.join(sorted(id_to_folders[gid])),
+                      'method': ';'.join(sorted(id_to_method[gid])),
+                  })
+
+          with (output / 'postid_evidence.csv').open('w', encoding='utf-8', newline='') as fh:
+              fields = ['post_id', 'article_url', 'gallery_ids', 'matched_url', 'timestamp', 'folders', 'method', 'error']
+              writer = csv.DictWriter(fh, fieldnames=fields)
+              writer.writeheader()
+              for result in sorted(results, key=lambda row: (row.get('post_id') or 0, row['article_url'])):
+                  writer.writerow({
+                      'post_id': result.get('post_id') or '',
+                      'article_url': result['article_url'],
+                      'gallery_ids': ';'.join(map(str, result['gallery_ids'])),
+                      'matched_url': result['matched_url'],
+                      'timestamp': result['timestamp'],
+                      'folders': ';'.join(result['folders']),
+                      'method': result['method'],
+                      'error': result['error'],
+                  })
+
+          query_rows = []
+          for result in results:
+              for query in result['queries']:
+                  query_rows.append({
+                      'post_id': result.get('post_id') or '',
+                      'article_url': result['article_url'],
+                      **query,
+                  })
+          with (output / 'postid_queries.csv').open('w', encoding='utf-8', newline='') as fh:
+              fields = ['post_id', 'article_url', 'target', 'captures', 'query_url', 'status_code', 'error']
+              writer = csv.DictWriter(fh, fieldnames=fields)
+              writer.writeheader()
+              for row in query_rows:
+                  writer.writerow({field: row.get(field, '') for field in fields})
+
+          unresolved_before = sorted(set(all_ids) - already_mapped)
+          unresolved_after = sorted(set(unresolved_before) - set(id_to_folders))
+          with (output / 'still_unresolved_ids.csv').open('w', encoding='utf-8', newline='') as fh:
+              writer = csv.DictWriter(fh, fieldnames=['gallery_id'])
+              writer.writeheader()
+              for gid in unresolved_after:
+                  writer.writerow({'gallery_id': gid})
+
+          summary = {
+              'gallery_ids_total': len(all_ids),
+              'already_mapped_before_postid': len(already_mapped),
+              'unresolved_before_postid': len(unresolved_before),
+              'records_with_post_id_tested': len(targets),
+              'ids_without_post_id': len(ids_without_post_id),
+              'newly_mapped_ids': len(id_to_folders),
+              'new_folders': len({folder for folders in id_to_folders.values() for folder in folders}),
+              'still_unresolved': len(unresolved_after),
+          }
+          (output / 'summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
+          print(json.dumps(summary), flush=True)
+          PY
+
+      - name: Upload post-ID recovery
+        uses: actions/upload-artifact@v4
+        with:
+          name: wayback-postid-recovery-${{ github.run_id }}
+          path: wayback_postid/
+          retention-days: 90
+          if-no-files-found: error
