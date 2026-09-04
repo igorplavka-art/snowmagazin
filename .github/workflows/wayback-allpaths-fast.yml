@@ -1,0 +1,81 @@
+name: Fast Wayback all gallery paths
+
+on:
+  push:
+    branches:
+      - crawler-v1
+
+permissions:
+  contents: read
+
+jobs:
+  index:
+    if: contains(github.event.head_commit.message, '[wayback-allpaths]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run tests
+        env:
+          PYTHONPATH: src
+        run: pytest -q
+      - name: Enumerate every historical gallery path without MIME filtering
+        env:
+          PYTHONPATH: src
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv, json, re
+          from collections import Counter
+          from pathlib import Path
+          from urllib.parse import urlparse
+          import requests
+          from snowmagazin_crawler.wayback_recovery import query_cdx
+
+          prefixes = [
+              'http://www.snowmagazin.sk/wp-content/gallery/',
+              'https://www.snowmagazin.sk/wp-content/gallery/',
+              'http://snowmagazin.sk/wp-content/gallery/',
+              'https://snowmagazin.sk/wp-content/gallery/',
+          ]
+          rx = re.compile(r'/wp-content/gallery/([^/]+)/(.+)$', re.I)
+          seen = set(); rows=[]; query_meta=[]
+          s=requests.Session(); s.headers.update({'User-Agent':'SnowmagazinArchiveRecovery/1.0'})
+          for prefix in prefixes:
+              found, meta = query_cdx(s, prefix, 'prefix', image_only=False, limit=50000)
+              query_meta.append({'target':prefix,'captures':len(found),**meta})
+              for r in found:
+                  u=r.get('original','')
+                  if u in seen: continue
+                  seen.add(u)
+                  m=rx.search(urlparse(u).path)
+                  if not m: continue
+                  folder=m.group(1); rel=m.group(2)
+                  rows.append({**r,'folder':folder,'relative_path':rel})
+          out=Path('wayback_allpaths'); out.mkdir(exist_ok=True)
+          fields=['folder','relative_path','timestamp','original','mimetype','statuscode']
+          with (out/'gallery_all_paths.csv').open('w',encoding='utf-8',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=fields); w.writeheader(); [w.writerow({k:r.get(k,'') for k in fields}) for r in rows]
+          counts=Counter(r['folder'] for r in rows)
+          with (out/'gallery_folders_all.csv').open('w',encoding='utf-8',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=['folder','paths_indexed']); w.writeheader()
+              for folder in sorted(counts): w.writerow({'folder':folder,'paths_indexed':counts[folder]})
+          summary={'folders':len(counts),'paths':len(rows),'mime_types':dict(Counter(r.get('mimetype','') for r in rows)),'queries':query_meta}
+          (out/'summary.json').write_text(json.dumps(summary,ensure_ascii=False,indent=2),encoding='utf-8')
+          print(json.dumps({'folders':len(counts),'paths':len(rows),'mime_types':summary['mime_types']}))
+          PY
+      - name: Upload all-path index
+        uses: actions/upload-artifact@v4
+        with:
+          name: wayback-gallery-allpaths-${{ github.run_id }}
+          path: wayback_allpaths/
+          retention-days: 90
+          if-no-files-found: error
