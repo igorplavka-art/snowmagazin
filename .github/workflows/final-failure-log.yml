@@ -39,11 +39,12 @@ jobs:
           import csv, json
           from collections import Counter
           from pathlib import Path
-          from urllib.parse import urlparse
+          from urllib.parse import urlparse, unquote
 
           original = list(csv.DictReader(open('original/media_out/media_files.csv', encoding='utf-8')))
           retry = list(csv.DictReader(open('retry/retry_results.csv', encoding='utf-8')))
           retry_by_source = {r['source_url']: r for r in retry}
+          image_ext={'.jpg','.jpeg','.png','.gif','.webp','.avif','.bmp','.tif','.tiff'}
 
           failures=[]
           for r in original:
@@ -54,12 +55,15 @@ jobs:
                   continue
               final_error = (rr or {}).get('retry_error') or r.get('error','')
               source=r.get('source_url','')
+              ext=Path(unquote(urlparse(source).path)).suffix.lower()
               failures.append({
                   'article_title': r.get('article_title',''),
                   'article_url': r.get('article_url',''),
                   'year': r.get('year',''),
                   'source_url': source,
                   'host': urlparse(source).netloc,
+                  'extension': ext,
+                  'asset_type': 'image' if ext in image_ext else 'non_image_reference',
                   'original_error': r.get('error',''),
                   'final_error': final_error,
                   'retry_attempted': 'yes' if rr else 'no',
@@ -78,29 +82,32 @@ jobs:
               r['category']=category(r['final_error'])
 
           out=Path('report'); out.mkdir(exist_ok=True)
-          fields=['category','year','host','article_title','article_url','source_url','original_error','final_error','retry_attempted']
+          fields=['asset_type','category','year','host','extension','article_title','article_url','source_url','original_error','final_error','retry_attempted']
           with (out/'durable_media_failures.csv').open('w',encoding='utf-8',newline='') as fh:
               w=csv.DictWriter(fh,fieldnames=fields); w.writeheader(); w.writerows(failures)
 
+          image_failures=[r for r in failures if r['asset_type']=='image']
+          non_images=[r for r in failures if r['asset_type']!='image']
           reasons=Counter(r['category'] for r in failures)
-          hosts=Counter(r['host'] for r in failures)
-          years=Counter(r['year'] for r in failures)
+          image_reasons=Counter(r['category'] for r in image_failures)
+          hosts=Counter(r['host'] for r in image_failures)
+          years=Counter(r['year'] for r in image_failures)
           summary={
-              'durable_failures':len(failures),
-              'by_category':dict(reasons.most_common()),
-              'top_hosts':dict(hosts.most_common(15)),
-              'by_year':dict(sorted(years.items())),
+              'durable_references':len(failures),
+              'durable_image_failures':len(image_failures),
+              'non_image_references':len(non_images),
+              'image_failures_by_category':dict(image_reasons.most_common()),
+              'all_references_by_category':dict(reasons.most_common()),
+              'top_image_failure_hosts':dict(hosts.most_common(15)),
+              'image_failures_by_year':dict(sorted(years.items())),
           }
           (out/'durable_media_failures_summary.json').write_text(json.dumps(summary,ensure_ascii=False,indent=2),encoding='utf-8')
           print(json.dumps(summary,ensure_ascii=False))
-          print('--- FAILURES ---')
-          for r in failures:
-              print(f"{r['category']} | {r['year']} | {r['host']} | {r['article_title']} | {r['source_url']}")
           PY
 
       - name: Upload final failure log
         uses: actions/upload-artifact@v4
         with:
-          name: final-media-failure-log
+          name: final-media-failure-log-v2
           path: report/
           if-no-files-found: error
