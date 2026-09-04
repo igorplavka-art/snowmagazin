@@ -1,0 +1,123 @@
+name: Recover Snowmagazin NextGEN galleries
+
+on:
+  push:
+    branches:
+      - crawler-v1
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  recover:
+    if: contains(github.event.head_commit.message, '[recover-galleries]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run tests
+        env:
+          PYTHONPATH: src
+        run: pytest -q
+
+      - name: Download archived article corpus
+        uses: actions/download-artifact@v4
+        with:
+          name: snowmagazin-archive-full-33882322286
+          path: article_input
+          repository: igorplavka-art/snowmagazin
+          run-id: 33882322286
+          github-token: ${{ github.token }}
+
+      - name: Extract inner article archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p article_archive
+          python - <<'PY'
+          from pathlib import Path
+          import zipfile
+          inner = Path('article_input/snowmagazin-archive.zip')
+          with zipfile.ZipFile(inner) as zf:
+              zf.extractall('article_archive')
+          print('metadata files:', len(list(Path('article_archive/out/archive').rglob('metadata.json'))))
+          PY
+
+      - name: Recover gallery evidence and files
+        env:
+          PYTHONPATH: src
+        run: |
+          python -m snowmagazin_crawler.gallery_recovery \
+            --archive-root article_archive/out/archive \
+            --output gallery_out | tee gallery-run-summary.json
+
+      - name: Pack recovered galleries into Drive-safe chunks
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import zipfile
+          root = Path('gallery_out/galleries')
+          out = Path('gallery_chunks')
+          out.mkdir(exist_ok=True)
+          files = sorted(p for p in root.rglob('*') if p.is_file()) if root.exists() else []
+          limit = 65 * 1024 * 1024
+          groups=[]; current=[]; size=0
+          for p in files:
+              n=p.stat().st_size
+              if current and size+n > limit:
+                  groups.append(current); current=[]; size=0
+              current.append(p); size += n
+          if current: groups.append(current)
+          for idx, group in enumerate(groups, 1):
+              target = out / f'snowmagazin-nextgen-recovered-part{idx:02d}.zip'
+              with zipfile.ZipFile(target, 'w', compression=zipfile.ZIP_STORED, allowZip64=True) as zf:
+                  for p in group:
+                      zf.write(p, p.relative_to(root))
+              print(target, target.stat().st_size)
+          print('parts', len(groups), 'files', len(files))
+          PY
+
+      - name: Upload gallery manifests
+        uses: actions/upload-artifact@v4
+        with:
+          name: gallery-recovery-manifests
+          path: |
+            gallery_out/gallery_recovery.csv
+            gallery_out/gallery_id_mapping.csv
+            gallery_out/unresolved_gallery_ids.csv
+            gallery_out/folder_probe.csv
+            gallery_out/gallery_files.csv
+            gallery_out/gallery-summary.json
+            gallery-run-summary.json
+          if-no-files-found: error
+
+      - name: Upload gallery part 01
+        uses: actions/upload-artifact@v4
+        with: {name: gallery-recovery-part01, path: gallery_chunks/snowmagazin-nextgen-recovered-part01.zip, compression-level: 0, if-no-files-found: warn}
+      - name: Upload gallery part 02
+        uses: actions/upload-artifact@v4
+        with: {name: gallery-recovery-part02, path: gallery_chunks/snowmagazin-nextgen-recovered-part02.zip, compression-level: 0, if-no-files-found: warn}
+      - name: Upload gallery part 03
+        uses: actions/upload-artifact@v4
+        with: {name: gallery-recovery-part03, path: gallery_chunks/snowmagazin-nextgen-recovered-part03.zip, compression-level: 0, if-no-files-found: warn}
+      - name: Upload gallery part 04
+        uses: actions/upload-artifact@v4
+        with: {name: gallery-recovery-part04, path: gallery_chunks/snowmagazin-nextgen-recovered-part04.zip, compression-level: 0, if-no-files-found: warn}
+      - name: Upload gallery part 05
+        uses: actions/upload-artifact@v4
+        with: {name: gallery-recovery-part05, path: gallery_chunks/snowmagazin-nextgen-recovered-part05.zip, compression-level: 0, if-no-files-found: warn}
+      - name: Upload gallery part 06
+        uses: actions/upload-artifact@v4
+        with: {name: gallery-recovery-part06, path: gallery_chunks/snowmagazin-nextgen-recovered-part06.zip, compression-level: 0, if-no-files-found: warn}
