@@ -82,7 +82,7 @@ def test_crawl_archives_rest_posts_skips_duplicate_url_and_records_fallback_erro
       <body><article><h1>Two</h1><div class="entry-content"><p>Fallback body</p></div></article></body></html>
     '''
     session = FakeSession({
-        (endpoint, (('page', 1), ('per_page', 100))): FakeResponse(json_data=[rest_post], headers={'X-WP-TotalPages': '1'}),
+        (endpoint, (('_embed', 1), ('page', 1), ('per_page', 100))): FakeResponse(json_data=[rest_post], headers={'X-WP-TotalPages': '1'}),
         base + '/wp-sitemap.xml': FakeResponse(status_code=404),
         base + '/post-sitemap.xml': FakeResponse(status_code=404),
         base + '/sitemap_index.xml': FakeResponse(status_code=404),
