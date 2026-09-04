@@ -1,0 +1,150 @@
+name: Smoke recover Racibor NextGEN gallery
+
+on:
+  push:
+    branches:
+      - crawler-v1
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    if: contains(github.event.head_commit.message, '[wayback-smoke-racibor]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install requests
+        run: python -m pip install requests
+      - name: Recover Racibor sequentially
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv
+          import hashlib
+          import json
+          import random
+          import time
+          from pathlib import Path
+
+          import requests
+
+          src = Path('wayback_smoke/racibor_gallery_files.csv')
+          out = Path('racibor_smoke')
+          files_root = out / 'files' / 'racibor'
+          files_root.mkdir(parents=True, exist_ok=True)
+
+          def image_kind(data):
+              if data.startswith(b'\xff\xd8\xff'):
+                  return 'jpeg'
+              if data.startswith(b'\x89PNG\r\n\x1a\n'):
+                  return 'png'
+              if data.startswith((b'GIF87a', b'GIF89a')):
+                  return 'gif'
+              if len(data) >= 12 and data[:4] == b'RIFF' and data[8:12] == b'WEBP':
+                  return 'webp'
+              return ''
+
+          rows = list(csv.DictReader(src.open(encoding='utf-8')))
+          session = requests.Session()
+          session.headers.update({
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36',
+              'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+              'Accept-Language': 'sk-SK,sk;q=0.9,en;q=0.8',
+          })
+
+          results = []
+          for index, row in enumerate(rows, 1):
+              timestamp = row['timestamp']
+              original = row['original']
+              candidates = [
+                  f'https://web.archive.org/web/{timestamp}id_/{original}',
+                  f'https://web.archive.org/web/{timestamp}im_/{original}',
+                  f'https://web.archive.org/web/{timestamp}/{original}',
+              ]
+              errors = []
+              recovered = False
+              for candidate in candidates:
+                  for attempt in range(3):
+                      try:
+                          response = session.get(candidate, timeout=45, allow_redirects=True)
+                      except Exception as exc:
+                          errors.append(f'{type(exc).__name__}: {exc}')
+                          time.sleep(6 + attempt * 8 + random.uniform(0, 2))
+                          continue
+                      if response.status_code in (429, 500, 502, 503, 504):
+                          errors.append(f'HTTP {response.status_code}')
+                          time.sleep(8 + attempt * 10 + random.uniform(0, 3))
+                          continue
+                      if response.status_code >= 400:
+                          errors.append(f'HTTP {response.status_code}')
+                          break
+                      kind = image_kind(response.content)
+                      if not kind:
+                          errors.append(f'not-image {response.headers.get("Content-Type", "")}')
+                          break
+                      destination = files_root / row['relative_path']
+                      destination.parent.mkdir(parents=True, exist_ok=True)
+                      destination.write_bytes(response.content)
+                      results.append({
+                          **row,
+                          'status': 'ok',
+                          'bytes': len(response.content),
+                          'sha256': hashlib.sha256(response.content).hexdigest(),
+                          'detected_type': kind,
+                          'resolved_url': candidate,
+                          'saved_path': str(destination),
+                          'error': '',
+                      })
+                      print(index, '/', len(rows), 'OK', row['relative_path'], len(response.content), flush=True)
+                      recovered = True
+                      break
+                  if recovered:
+                      break
+                  time.sleep(2 + random.uniform(0, 1))
+              if not recovered:
+                  results.append({**row, 'status': 'error', 'error': '; '.join(errors[-5:])})
+                  print(index, '/', len(rows), 'FAIL', row['relative_path'], errors[-1] if errors else '', flush=True)
+              time.sleep(2.5 + random.uniform(0.5, 1.5))
+
+          manifest_fields = [
+              'folder','asset_kind','relative_path','timestamp','original','mimetype','statuscode',
+              'status','bytes','sha256','detected_type','resolved_url','saved_path','error'
+          ]
+          with (out / 'manifest.csv').open('w', encoding='utf-8', newline='') as handle:
+              writer = csv.DictWriter(handle, fieldnames=manifest_fields)
+              writer.writeheader()
+              for result in results:
+                  writer.writerow({key: result.get(key, '') for key in manifest_fields})
+
+          summary = {
+              'folder': 'racibor',
+              'attempted': len(results),
+              'downloaded': sum(r['status'] == 'ok' for r in results),
+              'failed': sum(r['status'] != 'ok' for r in results),
+              'originals_downloaded': sum(r['status'] == 'ok' and r['asset_kind'] == 'original' for r in results),
+              'thumbnails_downloaded': sum(r['status'] == 'ok' and r['asset_kind'] == 'thumbnail' for r in results),
+              'total_bytes': sum(int(r.get('bytes') or 0) for r in results),
+          }
+          (out / 'summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
+          print(json.dumps(summary), flush=True)
+
+          if summary['originals_downloaded'] == 0:
+              raise SystemExit('Smoke failed: no original images recovered')
+          PY
+      - name: Pack smoke result
+        run: zip -r racibor-wayback-smoke.zip racibor_smoke
+      - name: Upload smoke artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: racibor-wayback-smoke-${{ github.run_id }}
+          path: racibor-wayback-smoke.zip
+          retention-days: 90
+          if-no-files-found: error
