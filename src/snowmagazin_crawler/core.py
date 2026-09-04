@@ -66,6 +66,24 @@ def normalize_wp_post(post):
     raw_html = (post.get('content') or {}).get('rendered') or ''
     excerpt_html = (post.get('excerpt') or {}).get('rendered') or ''
     title = html_lib.unescape(BeautifulSoup((post.get('title') or {}).get('rendered') or '', 'html.parser').get_text(' ', strip=True))
+
+    embedded = post.get('_embedded') or {}
+    author_name = None
+    embedded_authors = embedded.get('author') or []
+    if embedded_authors and isinstance(embedded_authors[0], dict):
+        author_name = embedded_authors[0].get('name') or None
+
+    category_names = []
+    tag_names = []
+    for group in embedded.get('wp:term') or []:
+        for term in group or []:
+            if not isinstance(term, dict) or not term.get('name'):
+                continue
+            if term.get('taxonomy') == 'category':
+                category_names.append(term['name'])
+            elif term.get('taxonomy') == 'post_tag':
+                tag_names.append(term['name'])
+
     return {
         'id': post.get('id'),
         'published_date': post.get('date'),
@@ -78,9 +96,9 @@ def normalize_wp_post(post):
         'html': raw_html,
         'text': html_to_text(raw_html),
         'author_id': post.get('author'),
-        'author_name': None,
-        'categories': list(post.get('categories') or []),
-        'tags': list(post.get('tags') or []),
+        'author_name': author_name,
+        'categories': category_names or list(post.get('categories') or []),
+        'tags': tag_names or list(post.get('tags') or []),
         'nggallery_ids': extract_gallery_ids(raw_html),
         'media_urls': extract_media_urls(raw_html),
         'source_method': 'wp_rest',
