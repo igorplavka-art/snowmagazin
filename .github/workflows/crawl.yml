@@ -1,6 +1,9 @@
 name: Crawl Snowmagazin
 
 on:
+  push:
+    branches:
+      - crawler-v1
   workflow_dispatch:
     inputs:
       mode:
@@ -20,7 +23,7 @@ permissions:
 
 jobs:
   crawl:
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.issue.title, '[snowmagazin-crawl]')
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || startsWith(github.event.issue.title, '[snowmagazin-crawl]')
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
@@ -50,7 +53,9 @@ jobs:
         run: |
           set -euo pipefail
           MODE="${DISPATCH_MODE:-smoke}"
-          if [[ "${GITHUB_EVENT_NAME}" == "issues" ]]; then
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            MODE="smoke"
+          elif [[ "${GITHUB_EVENT_NAME}" == "issues" ]]; then
             if [[ "${ISSUE_TITLE}" == *" full"* || "${ISSUE_TITLE}" == *"[full]"* ]]; then
               MODE="full"
             else
