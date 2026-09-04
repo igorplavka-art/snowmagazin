@@ -1,0 +1,169 @@
+name: Fast Wayback article-to-gallery map
+
+on:
+  push:
+    branches:
+      - crawler-v1
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  map:
+    if: contains(github.event.head_commit.message, '[wayback-article-map]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run tests
+        env:
+          PYTHONPATH: src
+        run: pytest -q
+      - name: Download article corpus
+        uses: actions/download-artifact@v4
+        with:
+          name: snowmagazin-archive-full-33882322286
+          path: article_input
+          repository: igorplavka-art/snowmagazin
+          run-id: 33882322286
+          github-token: ${{ github.token }}
+      - name: Extract corpus
+        shell: bash
+        run: |
+          mkdir -p article_archive
+          python - <<'PY'
+          from zipfile import ZipFile
+          from pathlib import Path
+          with ZipFile(Path('article_input/snowmagazin-archive.zip')) as z:
+              z.extractall('article_archive')
+          PY
+      - name: Map unresolved IDs from global Wayback article index
+        env:
+          PYTHONPATH: src
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv, json, re, time
+          from collections import defaultdict
+          from concurrent.futures import ThreadPoolExecutor, as_completed
+          from pathlib import Path
+          from urllib.parse import urlparse
+          import requests
+
+          from snowmagazin_crawler.gallery_recovery import scan_archive
+          from snowmagazin_crawler.wayback_recovery import query_cdx, wayback_raw_url, extract_snapshot_folders
+
+          root = Path('article_archive/out/archive')
+          scan = scan_archive(root)
+          unresolved = sorted(gid for gid in scan['all_ids'] if not scan['id_to_folders'].get(gid))
+
+          s = requests.Session()
+          s.headers.update({'User-Agent':'SnowmagazinArchiveRecovery/1.0'})
+          site_prefixes = [
+              'http://www.snowmagazin.sk/',
+              'https://www.snowmagazin.sk/',
+              'http://snowmagazin.sk/',
+              'https://snowmagazin.sk/',
+          ]
+          all_pages=[]; seen=set(); query_meta=[]
+          for prefix in site_prefixes:
+              rows, meta = query_cdx(s, prefix, 'prefix', image_only=False, limit=50000)
+              query_meta.append({'prefix':prefix,'rows':len(rows),**meta})
+              for row in rows:
+                  original=row.get('original','')
+                  path=urlparse(original).path.lower()
+                  mime=(row.get('mimetype') or '').lower()
+                  if original in seen: continue
+                  if '/wp-content/' in path or '/wp-admin/' in path or '/wp-includes/' in path: continue
+                  if any(path.endswith(ext) for ext in ('.jpg','.jpeg','.png','.gif','.webp','.pdf','.css','.js','.xml','.zip')): continue
+                  if mime.startswith('image/') or 'javascript' in mime or 'css' in mime: continue
+                  seen.add(original); all_pages.append(row)
+
+          by_slug=defaultdict(list)
+          for row in all_pages:
+              parts=[p for p in urlparse(row['original']).path.split('/') if p]
+              if not parts: continue
+              slug=parts[-1].lower()
+              by_slug[slug].append(row)
+
+          targets=[]
+          for gid in unresolved:
+              for article_url in sorted(scan['id_to_articles'].get(gid, set())):
+                  parts=[p for p in urlparse(article_url).path.split('/') if p]
+                  if not parts: continue
+                  slug=parts[-1].lower()
+                  candidates=by_slug.get(slug, [])
+                  # also tolerate a current slug embedded in a dated old path
+                  if not candidates:
+                      candidates=[r for r in all_pages if slug and slug in urlparse(r['original']).path.lower()]
+                  for row in candidates[:6]:
+                      targets.append((gid, article_url, slug, row))
+
+          def fetch_target(item):
+              gid, article_url, slug, row=item
+              snap=wayback_raw_url(row)
+              try:
+                  r=requests.get(snap, timeout=45, allow_redirects=True, headers={'User-Agent':'SnowmagazinArchiveRecovery/1.0'})
+                  folders=extract_snapshot_folders(r.text if r.status_code < 400 else '')
+                  return {'gallery_id':gid,'article_url':article_url,'slug':slug,'archived_url':row.get('original',''),'timestamp':row.get('timestamp',''),'snapshot_url':snap,'http_status':r.status_code,'folders':folders,'error':''}
+              except Exception as e:
+                  return {'gallery_id':gid,'article_url':article_url,'slug':slug,'archived_url':row.get('original',''),'timestamp':row.get('timestamp',''),'snapshot_url':snap,'http_status':'','folders':[],'error':f'{type(e).__name__}: {e}'}
+
+          results=[]
+          with ThreadPoolExecutor(max_workers=10) as ex:
+              futures=[ex.submit(fetch_target,t) for t in targets]
+              for i,f in enumerate(as_completed(futures),1):
+                  results.append(f.result())
+                  if i % 50 == 0: print('snapshots',i,'/',len(futures),flush=True)
+
+          mapped=defaultdict(set)
+          for r in results:
+              for folder in r['folders']:
+                  mapped[r['gallery_id']].add(folder)
+
+          out=Path('wayback_article_map'); out.mkdir(exist_ok=True)
+          fields=['gallery_id','article_url','slug','archived_url','timestamp','snapshot_url','http_status','folders','error']
+          with (out/'snapshot_evidence.csv').open('w',encoding='utf-8',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=fields); w.writeheader()
+              for r in sorted(results,key=lambda x:(x['gallery_id'],x['timestamp'])):
+                  row=dict(r); row['folders']=';'.join(r['folders']); w.writerow(row)
+          with (out/'new_id_folder_mapping.csv').open('w',encoding='utf-8',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=['gallery_id','folders','articles']); w.writeheader()
+              for gid in unresolved:
+                  if mapped.get(gid):
+                      w.writerow({'gallery_id':gid,'folders':';'.join(sorted(mapped[gid])),'articles':';'.join(sorted(scan['id_to_articles'].get(gid,set())))})
+          still=[gid for gid in unresolved if not mapped.get(gid)]
+          with (out/'still_unresolved_ids.csv').open('w',encoding='utf-8',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=['gallery_id','articles']); w.writeheader()
+              for gid in still:
+                  w.writerow({'gallery_id':gid,'articles':';'.join(sorted(scan['id_to_articles'].get(gid,set())))})
+          summary={
+              'gallery_ids_total':len(scan['all_ids']),
+              'initially_unresolved':len(unresolved),
+              'historical_page_urls_indexed':len(all_pages),
+              'snapshot_targets':len(targets),
+              'snapshot_fetches':len(results),
+              'newly_mapped_ids':len(mapped),
+              'still_unresolved':len(still),
+              'new_folders':len({folder for folders in mapped.values() for folder in folders}),
+              'queries':query_meta,
+          }
+          (out/'summary.json').write_text(json.dumps(summary,ensure_ascii=False,indent=2),encoding='utf-8')
+          print(json.dumps({k:v for k,v in summary.items() if k!='queries'}),flush=True)
+          PY
+      - name: Upload mapping
+        uses: actions/upload-artifact@v4
+        with:
+          name: wayback-article-gallery-map-${{ github.run_id }}
+          path: wayback_article_map/
+          retention-days: 90
+          if-no-files-found: error
