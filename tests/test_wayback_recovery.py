@@ -4,7 +4,10 @@ from snowmagazin_crawler.wayback_recovery import (
     select_image_snapshot,
     wayback_raw_url,
 )
-from snowmagazin_crawler.wayback_assets import wayback_replay_candidates
+from snowmagazin_crawler.wayback_assets import (
+    wayback_html_replay_candidates,
+    wayback_replay_candidates,
+)
 
 
 def test_build_cdx_url_requests_successful_image_snapshots_for_exact_url():
@@ -48,6 +51,17 @@ def test_wayback_replay_candidates_try_raw_then_image_then_standard_replay():
         'https://web.archive.org/web/20161212000000id_/http://www.snowmagazin.sk/wp-content/gallery/elbrus/01.jpg',
         'https://web.archive.org/web/20161212000000im_/http://www.snowmagazin.sk/wp-content/gallery/elbrus/01.jpg',
         'https://web.archive.org/web/20161212000000/http://www.snowmagazin.sk/wp-content/gallery/elbrus/01.jpg',
+    ]
+
+
+def test_wayback_html_replay_candidates_try_raw_then_standard_replay():
+    snap = {
+        'timestamp': '20141011165619',
+        'original': 'http://www.snowmagazin.sk/2009/10/zimny-vystup-na-elbrus-nie-je-vylet-do-rakuskych-stredisk/',
+    }
+    assert wayback_html_replay_candidates(snap) == [
+        'https://web.archive.org/web/20141011165619id_/http://www.snowmagazin.sk/2009/10/zimny-vystup-na-elbrus-nie-je-vylet-do-rakuskych-stredisk/',
+        'https://web.archive.org/web/20141011165619/http://www.snowmagazin.sk/2009/10/zimny-vystup-na-elbrus-nie-je-vylet-do-rakuskych-stredisk/',
     ]
 
 
