@@ -2,6 +2,8 @@ from snowmagazin_crawler.gallery_recovery import (
     extract_gallery_evidence,
     extract_index_images,
     extract_mrss_images,
+    extract_wayback_snapshot_folders,
+    parse_cdx_rows,
     gallery_status,
 )
 
@@ -59,6 +61,42 @@ def test_extract_mrss_images_recovers_full_gallery_urls_and_ignores_thumbnails()
     ]
 
 
+def test_parse_cdx_rows_returns_unique_original_urls_and_timestamps():
+    payload = '''
+    urlkey timestamp original mimetype statuscode digest length
+    sk,magazin)/wp-content/gallery/elbrus/a.jpg 20110102030405 http://www.snowmagazin.sk/wp-content/gallery/elbrus/a.jpg image/jpeg 200 ABC 123
+    sk,magazin)/wp-content/gallery/elbrus/a.jpg 20120102030405 http://www.snowmagazin.sk/wp-content/gallery/elbrus/a.jpg image/jpeg 200 DEF 123
+    sk,magazin)/wp-content/gallery/elbrus/thumbs/thumbs_a.jpg 20110102030405 http://www.snowmagazin.sk/wp-content/gallery/elbrus/thumbs/thumbs_a.jpg image/jpeg 200 GHI 20
+    '''
+    rows = parse_cdx_rows(payload)
+    assert rows == [
+        {
+            'timestamp': '20110102030405',
+            'original': 'http://www.snowmagazin.sk/wp-content/gallery/elbrus/a.jpg',
+            'mimetype': 'image/jpeg',
+            'statuscode': '200',
+        },
+        {
+            'timestamp': '20110102030405',
+            'original': 'http://www.snowmagazin.sk/wp-content/gallery/elbrus/thumbs/thumbs_a.jpg',
+            'mimetype': 'image/jpeg',
+            'statuscode': '200',
+        },
+    ]
+
+
+def test_extract_wayback_snapshot_folders_recovers_rendered_nextgen_folder():
+    html = '''
+    <html><body>
+      <div class="ngg-galleryoverview" id="ngg-gallery-148-1">
+        <a href="http://www.snowmagazin.sk/wp-content/gallery/fwt-russia-usa/01.jpg">one</a>
+        <img src="http://www.snowmagazin.sk/wp-content/gallery/fwt-russia-usa/thumbs/thumbs_01.jpg">
+      </div>
+    </body></html>
+    '''
+    assert extract_wayback_snapshot_folders(html) == ['fwt-russia-usa']
+
+
 def test_gallery_status_is_partial_when_only_explicit_files_survive_without_index():
     status = gallery_status(
         gallery_ids=[86],
@@ -96,5 +134,3 @@ def test_gallery_status_is_unresolved_for_shortcode_without_folder_or_files():
         indexable=False,
     )
     assert status == 'unresolved'
-
-# Triggered independently so the MRSS test is observed red before implementation.
