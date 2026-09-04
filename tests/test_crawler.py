@@ -79,7 +79,7 @@ def test_extract_article_from_html_uses_current_tag_styles_body_and_visible_auth
     assert article['id'] == 10105
     assert article['published_date'].startswith('2009-11-04')
     assert article['author_name'] == 'Redakcia Relax'
-    assert article['text'] == 'Prvý publikovaný odsek. Druhý publikovaný odsek.'
+    assert article['text'] == 'Prvý publikovaný odsek.\nDruhý publikovaný odsek.'
     assert 'Súvisiaci článok' not in article['text']
     assert 'Perex' not in article['text']
 
