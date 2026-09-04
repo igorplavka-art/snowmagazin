@@ -1,1 +1,1 @@
-wayback-allpaths
+wayback-root
