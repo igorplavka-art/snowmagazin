@@ -1,0 +1,84 @@
+name: Wayback gallery root directory index
+
+on:
+  push:
+    branches:
+      - crawler-v1
+
+permissions:
+  contents: read
+
+jobs:
+  index:
+    if: contains(github.event.head_commit.message, '[wayback-root]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.txt
+      - name: Probe archived gallery root directory indexes
+        env:
+          PYTHONPATH: src
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv, json
+          from pathlib import Path
+          from urllib.parse import urljoin, urlparse
+          import requests
+          from bs4 import BeautifulSoup
+          from snowmagazin_crawler.wayback_recovery import query_cdx, wayback_raw_url
+
+          roots = [
+              'http://www.snowmagazin.sk/wp-content/gallery/',
+              'https://www.snowmagazin.sk/wp-content/gallery/',
+              'http://snowmagazin.sk/wp-content/gallery/',
+              'https://snowmagazin.sk/wp-content/gallery/',
+          ]
+          s=requests.Session(); s.headers.update({'User-Agent':'SnowmagazinArchiveRecovery/1.0'})
+          folders=set(); evidence=[]
+          for root in roots:
+              captures, meta = query_cdx(s, root, 'exact', image_only=False, limit=200)
+              for cap in captures:
+                  snap=wayback_raw_url(cap)
+                  try:
+                      r=s.get(snap, timeout=60, allow_redirects=True)
+                      body=r.text if r.status_code < 400 else ''
+                  except Exception as e:
+                      evidence.append({'root':root,'timestamp':cap.get('timestamp',''),'snapshot':snap,'status':'error','folders':0,'error':f'{type(e).__name__}: {e}'})
+                      continue
+                  found=[]
+                  if body:
+                      soup=BeautifulSoup(body,'html.parser')
+                      for a in soup.find_all('a', href=True):
+                          href=a.get('href','').strip()
+                          if not href or href in ('../','./','/') or href.startswith('?'):
+                              continue
+                          u=urljoin(root, href)
+                          p=urlparse(u).path
+                          marker='/wp-content/gallery/'
+                          if marker not in p: continue
+                          rest=p.split(marker,1)[1].strip('/')
+                          if rest and '/' not in rest and '.' not in rest:
+                              found.append(rest); folders.add(rest)
+                  evidence.append({'root':root,'timestamp':cap.get('timestamp',''),'snapshot':snap,'status':r.status_code,'folders':len(set(found)),'error':''})
+          out=Path('wayback_root'); out.mkdir(exist_ok=True)
+          with (out/'gallery_root_folders.csv').open('w',encoding='utf-8',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=['folder']); w.writeheader()
+              for folder in sorted(folders): w.writerow({'folder':folder})
+          with (out/'gallery_root_evidence.csv').open('w',encoding='utf-8',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=['root','timestamp','snapshot','status','folders','error']); w.writeheader(); w.writerows(evidence)
+          summary={'folders':len(folders),'captures_checked':len(evidence)}
+          (out/'summary.json').write_text(json.dumps(summary,ensure_ascii=False,indent=2),encoding='utf-8')
+          print(json.dumps(summary))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wayback-gallery-root-${{ github.run_id }}
+          path: wayback_root/
+          retention-days: 90
+          if-no-files-found: error
