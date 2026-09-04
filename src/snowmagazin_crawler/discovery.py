@@ -19,7 +19,7 @@ def iter_wp_posts(session, base_url, limit=None):
     page = 1
     total_pages = None
     while True:
-        response = session.get(endpoint, params={'per_page': 100, 'page': page}, timeout=30)
+        response = session.get(endpoint, params={'per_page': 100, 'page': page, '_embed': 1}, timeout=30)
         if getattr(response, 'status_code', 200) >= 400:
             break
         try:
