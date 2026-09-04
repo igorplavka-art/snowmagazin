@@ -1,19 +1,31 @@
 name: Crawl Snowmagazin
 
 on:
-  push:
-    branches:
-      - main
-      - crawler-v1
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Crawl mode
+        required: true
+        default: smoke
+        type: choice
+        options:
+          - smoke
+          - full
+  issues:
+    types:
+      - opened
 
 permissions:
   contents: read
 
 jobs:
   crawl:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.issue.title, '[snowmagazin-crawl]')
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    env:
+      ISSUE_TITLE: ${{ github.event.issue.title }}
+      DISPATCH_MODE: ${{ inputs.mode }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,13 +44,30 @@ jobs:
           PYTHONPATH: src
         run: pytest -q
 
-      - name: Crawl
-        env:
-          PYTHONPATH: src
+      - name: Resolve crawl mode
+        id: mode
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+          MODE="${DISPATCH_MODE:-smoke}"
+          if [[ "${GITHUB_EVENT_NAME}" == "issues" ]]; then
+            if [[ "${ISSUE_TITLE}" == *" full"* || "${ISSUE_TITLE}" == *"[full]"* ]]; then
+              MODE="full"
+            else
+              MODE="smoke"
+            fi
+          fi
+          echo "mode=${MODE}" >> "$GITHUB_OUTPUT"
+          echo "Crawl mode: ${MODE}"
+
+      - name: Crawl
+        env:
+          PYTHONPATH: src
+          CRAWL_MODE: ${{ steps.mode.outputs.mode }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${CRAWL_MODE}" == "full" ]]; then
             python -m snowmagazin_crawler --output out | tee crawl-summary.json
           else
             python -m snowmagazin_crawler --output out --limit 10 --delay 0.05 | tee crawl-summary.json
@@ -50,7 +79,7 @@ jobs:
       - name: Upload archive artifact
         uses: actions/upload-artifact@v4
         with:
-          name: snowmagazin-archive-${{ github.run_id }}
+          name: snowmagazin-archive-${{ steps.mode.outputs.mode }}-${{ github.run_id }}
           path: |
             snowmagazin-archive.zip
             out/articles.csv
