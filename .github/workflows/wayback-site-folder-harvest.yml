@@ -1,0 +1,191 @@
+name: Harvest all Wayback NextGEN folder references
+
+on:
+  push:
+    branches:
+      - crawler-v1
+
+permissions:
+  contents: read
+
+jobs:
+  harvest:
+    if: contains(github.event.head_commit.message, '[wayback-harvest]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run tests
+        env:
+          PYTHONPATH: src
+        run: pytest -q
+      - name: Harvest folder references from archived site pages
+        env:
+          PYTHONPATH: src
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv
+          import json
+          import time
+          from collections import defaultdict
+          from concurrent.futures import ThreadPoolExecutor, as_completed
+          from pathlib import Path
+          from urllib.parse import urlparse
+          import requests
+
+          from snowmagazin_crawler.wayback_recovery import (
+              extract_wayback_gallery_pairs,
+              extract_wayback_snapshot_folders,
+              query_cdx,
+              wayback_raw_url,
+          )
+
+          prefixes = [
+              'http://www.snowmagazin.sk/',
+              'https://www.snowmagazin.sk/',
+              'http://snowmagazin.sk/',
+              'https://snowmagazin.sk/',
+          ]
+          session = requests.Session()
+          session.headers.update({'User-Agent': 'SnowmagazinArchiveRecovery/1.0'})
+
+          page_rows = []
+          seen_urls = set()
+          query_meta = []
+          for prefix in prefixes:
+              rows, meta = query_cdx(session, prefix, 'prefix', image_only=False, limit=50000)
+              query_meta.append({'prefix': prefix, 'captures': len(rows), **meta})
+              for row in rows:
+                  original = row.get('original', '')
+                  if not original or original in seen_urls:
+                      continue
+                  path = urlparse(original).path.lower()
+                  mime = (row.get('mimetype') or '').lower()
+                  if '/wp-content/' in path or '/wp-admin/' in path or '/wp-includes/' in path:
+                      continue
+                  if any(path.endswith(ext) for ext in ('.jpg','.jpeg','.png','.gif','.webp','.pdf','.css','.js','.xml','.zip','.ico')):
+                      continue
+                  if mime.startswith('image/') or 'javascript' in mime or 'css' in mime:
+                      continue
+                  seen_urls.add(original)
+                  page_rows.append(row)
+
+          def fetch_snapshot(row):
+              snapshot = wayback_raw_url(row)
+              s = requests.Session()
+              s.headers.update({'User-Agent': 'SnowmagazinArchiveRecovery/1.0'})
+              try:
+                  response = s.get(snapshot, timeout=45, allow_redirects=True)
+              except Exception as exc:
+                  return {
+                      'archived_url': row.get('original',''),
+                      'timestamp': row.get('timestamp',''),
+                      'snapshot_url': snapshot,
+                      'http_status': '',
+                      'folders': [],
+                      'pairs': {},
+                      'error': f'{type(exc).__name__}: {exc}',
+                  }
+              if response.status_code >= 400:
+                  return {
+                      'archived_url': row.get('original',''),
+                      'timestamp': row.get('timestamp',''),
+                      'snapshot_url': snapshot,
+                      'http_status': response.status_code,
+                      'folders': [],
+                      'pairs': {},
+                      'error': f'HTTP {response.status_code}',
+                  }
+              html = response.text
+              return {
+                  'archived_url': row.get('original',''),
+                  'timestamp': row.get('timestamp',''),
+                  'snapshot_url': snapshot,
+                  'http_status': response.status_code,
+                  'folders': extract_wayback_snapshot_folders(html),
+                  'pairs': extract_wayback_gallery_pairs(html),
+                  'error': '',
+              }
+
+          results = []
+          with ThreadPoolExecutor(max_workers=8) as executor:
+              futures = [executor.submit(fetch_snapshot, row) for row in page_rows]
+              for i, future in enumerate(as_completed(futures), 1):
+                  results.append(future.result())
+                  if i % 100 == 0:
+                      print('site snapshots', i, '/', len(futures), flush=True)
+
+          folder_pages = defaultdict(set)
+          id_folders = defaultdict(set)
+          for result in results:
+              for folder in result['folders']:
+                  folder_pages[folder].add(result['archived_url'])
+              for gid, folders in result['pairs'].items():
+                  for folder in folders:
+                      id_folders[int(gid)].add(folder)
+
+          out = Path('wayback_site_harvest')
+          out.mkdir(exist_ok=True)
+          with (out / 'folders.csv').open('w', encoding='utf-8', newline='') as fh:
+              writer = csv.DictWriter(fh, fieldnames=['folder','page_count','sample_pages'])
+              writer.writeheader()
+              for folder in sorted(folder_pages):
+                  pages = sorted(folder_pages[folder])
+                  writer.writerow({'folder': folder, 'page_count': len(pages), 'sample_pages': ';'.join(pages[:10])})
+
+          with (out / 'direct_id_folder_pairs.csv').open('w', encoding='utf-8', newline='') as fh:
+              writer = csv.DictWriter(fh, fieldnames=['gallery_id','folders'])
+              writer.writeheader()
+              for gid in sorted(id_folders):
+                  writer.writerow({'gallery_id': gid, 'folders': ';'.join(sorted(id_folders[gid]))})
+
+          with (out / 'snapshot_evidence.csv').open('w', encoding='utf-8', newline='') as fh:
+              fields = ['archived_url','timestamp','snapshot_url','http_status','folders','pairs','error']
+              writer = csv.DictWriter(fh, fieldnames=fields)
+              writer.writeheader()
+              for result in sorted(results, key=lambda r: r['archived_url']):
+                  writer.writerow({
+                      'archived_url': result['archived_url'],
+                      'timestamp': result['timestamp'],
+                      'snapshot_url': result['snapshot_url'],
+                      'http_status': result['http_status'],
+                      'folders': ';'.join(result['folders']),
+                      'pairs': json.dumps(result['pairs'], ensure_ascii=False, sort_keys=True),
+                      'error': result['error'],
+                  })
+
+          with (out / 'queries.csv').open('w', encoding='utf-8', newline='') as fh:
+              fields = ['prefix','captures','query_url','status_code','error']
+              writer = csv.DictWriter(fh, fieldnames=fields)
+              writer.writeheader()
+              for row in query_meta:
+                  writer.writerow({field: row.get(field,'') for field in fields})
+
+          summary = {
+              'historical_page_urls': len(page_rows),
+              'snapshot_fetches': len(results),
+              'snapshot_success': sum(not r['error'] for r in results),
+              'snapshot_failures': sum(bool(r['error']) for r in results),
+              'folders_found': len(folder_pages),
+              'direct_gallery_ids_found': len(id_folders),
+              'direct_id_folder_pairs': sum(len(v) for v in id_folders.values()),
+          }
+          (out / 'summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
+          print(json.dumps(summary), flush=True)
+          PY
+      - name: Upload harvest
+        uses: actions/upload-artifact@v4
+        with:
+          name: wayback-site-folder-harvest-${{ github.run_id }}
+          path: wayback_site_harvest/
+          retention-days: 90
+          if-no-files-found: error
