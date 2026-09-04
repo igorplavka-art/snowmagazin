@@ -1,0 +1,83 @@
+from snowmagazin_crawler.gallery_recovery import (
+    extract_gallery_evidence,
+    extract_index_images,
+    gallery_status,
+)
+
+
+def test_extract_gallery_evidence_maps_shortcode_to_legacy_folder():
+    html = '''
+    <p>Text</p>
+    [nggallery id=86]
+    <img src="http://www.snowmagazin.sk/wp-content/gallery/obergurgl-2010/5.jpg">
+    <a href="/wp-content/gallery/obergurgl-2010/6.jpg">foto</a>
+    '''
+    evidence = extract_gallery_evidence(
+        html,
+        'https://snowmagazin.relaxmagazin.sk/obergurgl/',
+        metadata_ids=[86],
+    )
+    assert evidence['gallery_ids'] == [86]
+    assert evidence['folders'] == ['obergurgl-2010']
+    assert evidence['id_folder_pairs'] == [(86, 'obergurgl-2010')]
+    assert any(url.endswith('/wp-content/gallery/obergurgl-2010/5.jpg') for url in evidence['explicit_urls'])
+    assert any(url.endswith('/wp-content/gallery/obergurgl-2010/6.jpg') for url in evidence['explicit_urls'])
+
+
+def test_extract_index_images_returns_originals_and_skips_parent_and_thumbs():
+    html = '''
+    <html><body><h1>Index of /wp-content/gallery/test/</h1>
+      <a href="../">Parent Directory</a>
+      <a href="1.jpg">1.jpg</a>
+      <a href="two.JPG">two.JPG</a>
+      <a href="thumbs/">thumbs/</a>
+      <a href="notes.txt">notes.txt</a>
+    </body></html>
+    '''
+    urls = extract_index_images(
+        html,
+        'https://snowmagazin.relaxmagazin.sk/wp-content/gallery/test/',
+    )
+    assert urls == [
+        'https://snowmagazin.relaxmagazin.sk/wp-content/gallery/test/1.jpg',
+        'https://snowmagazin.relaxmagazin.sk/wp-content/gallery/test/two.JPG',
+    ]
+
+
+def test_gallery_status_is_partial_when_only_explicit_files_survive_without_index():
+    status = gallery_status(
+        gallery_ids=[86],
+        folders=['obergurgl-2010'],
+        explicit_count=2,
+        indexed_count=0,
+        downloaded_count=2,
+        failed_count=0,
+        indexable=False,
+    )
+    assert status == 'partial'
+
+
+def test_gallery_status_is_complete_when_directory_index_was_enumerated_without_failures():
+    status = gallery_status(
+        gallery_ids=[86],
+        folders=['obergurgl-2010'],
+        explicit_count=2,
+        indexed_count=18,
+        downloaded_count=18,
+        failed_count=0,
+        indexable=True,
+    )
+    assert status == 'complete'
+
+
+def test_gallery_status_is_unresolved_for_shortcode_without_folder_or_files():
+    status = gallery_status(
+        gallery_ids=[7],
+        folders=[],
+        explicit_count=0,
+        indexed_count=0,
+        downloaded_count=0,
+        failed_count=0,
+        indexable=False,
+    )
+    assert status == 'unresolved'
