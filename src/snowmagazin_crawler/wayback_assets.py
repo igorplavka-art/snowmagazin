@@ -18,6 +18,15 @@ def wayback_replay_candidates(snapshot):
     ]
 
 
+def wayback_html_replay_candidates(snapshot):
+    timestamp = snapshot['timestamp']
+    original = snapshot['original']
+    return [
+        f'{WAYBACK_BASE}/{timestamp}id_/{original}',
+        f'{WAYBACK_BASE}/{timestamp}/{original}',
+    ]
+
+
 def gallery_relative_path(original):
     path = urlparse(original).path
     marker = '/wp-content/gallery/'
