@@ -1,0 +1,106 @@
+name: Split Snowmagazin media artifacts
+
+on:
+  push:
+    branches:
+      - crawler-v1
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  split:
+    if: contains(github.event.head_commit.message, '[split-media]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Download 2021-2023 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: snowmagazin-media-2021-2023-33889118912
+          path: input/2123
+          repository: igorplavka-art/snowmagazin
+          run-id: 33889118912
+          github-token: ${{ github.token }}
+
+      - name: Download 2024-2026 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: snowmagazin-media-2024-2026-33889118912
+          path: input/2426
+          repository: igorplavka-art/snowmagazin
+          run-id: 33889118912
+          github-token: ${{ github.token }}
+
+      - name: Split into Drive-safe ZIP chunks
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import zipfile
+
+          LIMIT = 75 * 1024 * 1024
+          out = Path('chunks')
+          out.mkdir(exist_ok=True)
+
+          def split_tree(root, prefix):
+              files = sorted(p for p in Path(root).rglob('*') if p.is_file())
+              groups, current, size = [], [], 0
+              for path in files:
+                  n = path.stat().st_size
+                  if current and size + n > LIMIT:
+                      groups.append(current)
+                      current, size = [], 0
+                  current.append(path)
+                  size += n
+              if current:
+                  groups.append(current)
+              for idx, group in enumerate(groups, 1):
+                  target = out / f'{prefix}-part{idx:02d}.zip'
+                  with zipfile.ZipFile(target, 'w', compression=zipfile.ZIP_STORED, allowZip64=True) as zf:
+                      for path in group:
+                          zf.write(path, path.relative_to(root))
+                  print(target, target.stat().st_size)
+
+          split_tree('input/2123', 'snowmagazin-media-2021-2023')
+          split_tree('input/2426', 'snowmagazin-media-2024-2026')
+          PY
+          ls -lh chunks
+
+      - name: Upload 2021-2023 part 01
+        uses: actions/upload-artifact@v4
+        with: {name: media-split-2123-01, path: chunks/snowmagazin-media-2021-2023-part01.zip, compression-level: 0, if-no-files-found: warn}
+      - name: Upload 2021-2023 part 02
+        uses: actions/upload-artifact@v4
+        with: {name: media-split-2123-02, path: chunks/snowmagazin-media-2021-2023-part02.zip, compression-level: 0, if-no-files-found: warn}
+      - name: Upload 2021-2023 part 03
+        uses: actions/upload-artifact@v4
+        with: {name: media-split-2123-03, path: chunks/snowmagazin-media-2021-2023-part03.zip, compression-level: 0, if-no-files-found: warn}
+      - name: Upload 2021-2023 part 04
+        uses: actions/upload-artifact@v4
+        with: {name: media-split-2123-04, path: chunks/snowmagazin-media-2021-2023-part04.zip, compression-level: 0, if-no-files-found: warn}
+      - name: Upload 2021-2023 part 05
+        uses: actions/upload-artifact@v4
+        with: {name: media-split-2123-05, path: chunks/snowmagazin-media-2021-2023-part05.zip, compression-level: 0, if-no-files-found: warn}
+      - name: Upload 2021-2023 part 06
+        uses: actions/upload-artifact@v4
+        with: {name: media-split-2123-06, path: chunks/snowmagazin-media-2021-2023-part06.zip, compression-level: 0, if-no-files-found: warn}
+      - name: Upload 2021-2023 part 07
+        uses: actions/upload-artifact@v4
+        with: {name: media-split-2123-07, path: chunks/snowmagazin-media-2021-2023-part07.zip, compression-level: 0, if-no-files-found: warn}
+      - name: Upload 2021-2023 part 08
+        uses: actions/upload-artifact@v4
+        with: {name: media-split-2123-08, path: chunks/snowmagazin-media-2021-2023-part08.zip, compression-level: 0, if-no-files-found: warn}
+      - name: Upload 2024-2026 part 01
+        uses: actions/upload-artifact@v4
+        with: {name: media-split-2426-01, path: chunks/snowmagazin-media-2024-2026-part01.zip, compression-level: 0, if-no-files-found: warn}
+      - name: Upload 2024-2026 part 02
+        uses: actions/upload-artifact@v4
+        with: {name: media-split-2426-02, path: chunks/snowmagazin-media-2024-2026-part02.zip, compression-level: 0, if-no-files-found: warn}
+      - name: Upload 2024-2026 part 03
+        uses: actions/upload-artifact@v4
+        with: {name: media-split-2426-03, path: chunks/snowmagazin-media-2024-2026-part03.zip, compression-level: 0, if-no-files-found: warn}
+      - name: Upload 2024-2026 part 04
+        uses: actions/upload-artifact@v4
+        with: {name: media-split-2426-04, path: chunks/snowmagazin-media-2024-2026-part04.zip, compression-level: 0, if-no-files-found: warn}
