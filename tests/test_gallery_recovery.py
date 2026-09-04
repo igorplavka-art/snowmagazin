@@ -96,3 +96,5 @@ def test_gallery_status_is_unresolved_for_shortcode_without_folder_or_files():
         indexable=False,
     )
     assert status == 'unresolved'
+
+# Triggered independently so the MRSS test is observed red before implementation.
