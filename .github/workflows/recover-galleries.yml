@@ -54,7 +54,7 @@ jobs:
           print('metadata files:', len(list(Path('article_archive/out/archive').rglob('metadata.json'))))
           PY
 
-      - name: Recover gallery evidence and files
+      - name: Recover gallery evidence, Media RSS and files
         env:
           PYTHONPATH: src
         run: |
@@ -98,6 +98,7 @@ jobs:
             gallery_out/gallery_id_mapping.csv
             gallery_out/unresolved_gallery_ids.csv
             gallery_out/folder_probe.csv
+            gallery_out/mrss_probe.csv
             gallery_out/gallery_files.csv
             gallery_out/gallery-summary.json
             gallery-run-summary.json
