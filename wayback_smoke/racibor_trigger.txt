@@ -1,0 +1,1 @@
+Run one-folder end-to-end smoke recovery for NextGEN folder racibor.
