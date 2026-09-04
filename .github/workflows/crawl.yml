@@ -29,6 +29,7 @@ jobs:
     env:
       ISSUE_TITLE: ${{ github.event.issue.title }}
       DISPATCH_MODE: ${{ inputs.mode }}
+      COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,7 +55,11 @@ jobs:
           set -euo pipefail
           MODE="${DISPATCH_MODE:-smoke}"
           if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
-            MODE="smoke"
+            if [[ "${COMMIT_MESSAGE}" == *"[full]"* ]]; then
+              MODE="full"
+            else
+              MODE="smoke"
+            fi
           elif [[ "${GITHUB_EVENT_NAME}" == "issues" ]]; then
             if [[ "${ISSUE_TITLE}" == *" full"* || "${ISSUE_TITLE}" == *"[full]"* ]]; then
               MODE="full"
