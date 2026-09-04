@@ -1,0 +1,86 @@
+name: Fast Wayback gallery folder index
+
+on:
+  push:
+    branches:
+      - crawler-v1
+
+permissions:
+  contents: read
+
+jobs:
+  index:
+    if: contains(github.event.head_commit.message, '[wayback-folders]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run tests
+        env:
+          PYTHONPATH: src
+        run: pytest -q
+
+      - name: Enumerate historical gallery folders and files
+        env:
+          PYTHONPATH: src
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv, json
+          from collections import Counter
+          from pathlib import Path
+          import requests
+          from snowmagazin_crawler.wayback_recovery import enumerate_global_gallery_index
+
+          out = Path('wayback_fast')
+          out.mkdir(exist_ok=True)
+          s = requests.Session()
+          s.headers.update({'User-Agent': 'SnowmagazinArchiveRecovery/1.0'})
+          rows, queries = enumerate_global_gallery_index(s)
+
+          with (out / 'gallery_files.csv').open('w', encoding='utf-8', newline='') as f:
+              fields = ['folder','asset_kind','relative_path','timestamp','original','mimetype','statuscode']
+              w = csv.DictWriter(f, fieldnames=fields)
+              w.writeheader()
+              for row in rows:
+                  w.writerow({k: row.get(k, '') for k in fields})
+
+          counts = Counter(row['folder'] for row in rows)
+          originals = Counter(row['folder'] for row in rows if row['asset_kind'] == 'original')
+          with (out / 'gallery_folders.csv').open('w', encoding='utf-8', newline='') as f:
+              fields = ['folder','files_indexed','originals_indexed']
+              w = csv.DictWriter(f, fieldnames=fields)
+              w.writeheader()
+              for folder in sorted(counts):
+                  w.writerow({'folder': folder, 'files_indexed': counts[folder], 'originals_indexed': originals[folder]})
+
+          summary = {
+              'folders': len(counts),
+              'files': len(rows),
+              'originals': sum(1 for row in rows if row['asset_kind'] == 'original'),
+              'thumbnails': sum(1 for row in rows if row['asset_kind'] == 'thumbnail'),
+              'backups': sum(1 for row in rows if row['asset_kind'] == 'backup'),
+              'queries': queries,
+          }
+          (out / 'summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
+          print(json.dumps({k:v for k,v in summary.items() if k != 'queries'}))
+          PY
+
+      - name: Upload folder index
+        uses: actions/upload-artifact@v4
+        with:
+          name: wayback-gallery-folders-${{ github.run_id }}
+          path: wayback_fast/
+          retention-days: 90
+          if-no-files-found: error
