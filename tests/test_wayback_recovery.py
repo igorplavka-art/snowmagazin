@@ -2,8 +2,8 @@ from snowmagazin_crawler.wayback_recovery import (
     build_cdx_url,
     select_image_snapshot,
     wayback_raw_url,
-    wayback_replay_candidates,
 )
+from snowmagazin_crawler.wayback_assets import wayback_replay_candidates
 
 
 def test_build_cdx_url_requests_successful_image_snapshots_for_exact_url():
