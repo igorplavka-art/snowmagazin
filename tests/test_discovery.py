@@ -34,8 +34,8 @@ def test_iter_wp_posts_paginates_and_respects_limit():
     base = 'https://snowmagazin.relaxmagazin.sk'
     endpoint = base + '/wp-json/wp/v2/posts'
     session = FakeSession({
-        (endpoint, (('page', 1), ('per_page', 100))): FakeResponse(json_data=[{'id': 1}, {'id': 2}], headers={'X-WP-TotalPages': '2'}),
-        (endpoint, (('page', 2), ('per_page', 100))): FakeResponse(json_data=[{'id': 3}], headers={'X-WP-TotalPages': '2'}),
+        (endpoint, (('_embed', 1), ('page', 1), ('per_page', 100))): FakeResponse(json_data=[{'id': 1}, {'id': 2}], headers={'X-WP-TotalPages': '2'}),
+        (endpoint, (('_embed', 1), ('page', 2), ('per_page', 100))): FakeResponse(json_data=[{'id': 3}], headers={'X-WP-TotalPages': '2'}),
     })
     assert [p['id'] for p in iter_wp_posts(session, base)] == [1, 2, 3]
     assert [p['id'] for p in iter_wp_posts(session, base, limit=2)] == [1, 2]
