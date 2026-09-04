@@ -1,0 +1,159 @@
+name: Racibor Wayback smoke main trigger
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout crawler branch
+        uses: actions/checkout@v4
+        with:
+          ref: crawler-v1
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install requests pillow
+      - name: Download Racibor sequentially from Wayback
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv
+          import hashlib
+          import json
+          import random
+          import time
+          from pathlib import Path
+          from io import BytesIO
+          import requests
+          from PIL import Image
+
+          src = Path('wayback_smoke/racibor_gallery_files.csv')
+          out = Path('racibor_smoke')
+          originals = out / 'originals'
+          thumbs = out / 'thumbs'
+          originals.mkdir(parents=True, exist_ok=True)
+          thumbs.mkdir(parents=True, exist_ok=True)
+
+          rows = list(csv.DictReader(src.open(encoding='utf-8')))
+          session = requests.Session()
+          session.headers.update({
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
+              'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+              'Accept-Language': 'sk-SK,sk;q=0.9,en;q=0.8',
+          })
+
+          results = []
+          for idx, row in enumerate(rows, 1):
+              ts = row['timestamp']
+              original = row['original']
+              candidates = [
+                  f'https://web.archive.org/web/{ts}id_/{original}',
+                  f'https://web.archive.org/web/{ts}im_/{original}',
+                  f'https://web.archive.org/web/{ts}/{original}',
+              ]
+              result = {**row, 'status': 'error', 'bytes': 0, 'sha256': '', 'resolved_url': '', 'saved': '', 'error': ''}
+              errors = []
+              for replay in candidates:
+                  for attempt in range(3):
+                      try:
+                          response = session.get(replay, timeout=45, allow_redirects=True)
+                      except Exception as exc:
+                          errors.append(f'{type(exc).__name__}: {exc}')
+                          time.sleep(6 + attempt * 8 + random.uniform(0, 2))
+                          continue
+                      if response.status_code in (429, 500, 502, 503, 504):
+                          errors.append(f'HTTP {response.status_code}')
+                          time.sleep(8 + attempt * 10 + random.uniform(0, 3))
+                          continue
+                      if response.status_code >= 400:
+                          errors.append(f'HTTP {response.status_code}')
+                          break
+                      try:
+                          im = Image.open(BytesIO(response.content))
+                          im.verify()
+                      except Exception as exc:
+                          errors.append(f'not-image: {type(exc).__name__}')
+                          break
+                      target_root = thumbs if row['asset_kind'] == 'thumbnail' else originals
+                      dest = target_root / Path(row['relative_path']).name
+                      dest.write_bytes(response.content)
+                      result.update({
+                          'status': 'ok',
+                          'bytes': len(response.content),
+                          'sha256': hashlib.sha256(response.content).hexdigest(),
+                          'resolved_url': replay,
+                          'saved': str(dest.relative_to(out)),
+                          'error': '',
+                      })
+                      break
+                  if result['status'] == 'ok':
+                      break
+                  time.sleep(3 + random.uniform(0, 2))
+              if result['status'] != 'ok':
+                  result['error'] = '; '.join(errors[-5:])
+              results.append(result)
+              print(f"{idx}/{len(rows)} {result['status']} {row['relative_path']} {result['bytes']}", flush=True)
+              time.sleep(3 + random.uniform(0.5, 1.5))
+
+          fields = ['folder','asset_kind','relative_path','timestamp','original','mimetype','statuscode','status','bytes','sha256','resolved_url','saved','error']
+          with (out / 'manifest.csv').open('w', encoding='utf-8', newline='') as fh:
+              writer = csv.DictWriter(fh, fieldnames=fields)
+              writer.writeheader()
+              for row in results:
+                  writer.writerow({k: row.get(k, '') for k in fields})
+
+          summary = {
+              'attempted': len(results),
+              'ok': sum(r['status'] == 'ok' for r in results),
+              'failed': sum(r['status'] != 'ok' for r in results),
+              'originals_ok': sum(r['status'] == 'ok' and r['asset_kind'] == 'original' for r in results),
+              'thumbs_ok': sum(r['status'] == 'ok' and r['asset_kind'] == 'thumbnail' for r in results),
+              'bytes': sum(int(r.get('bytes') or 0) for r in results),
+          }
+          (out / 'summary.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
+          print(json.dumps(summary), flush=True)
+          if summary['originals_ok'] != 12:
+              raise SystemExit(f"Incomplete originals: {summary['originals_ok']}/12")
+          PY
+      - name: Verify all originals
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          files = sorted(Path('racibor_smoke/originals').glob('*.jpg'))
+          if len(files) != 12:
+              raise SystemExit(f'Expected 12 originals, found {len(files)}')
+          for path in files:
+              with Image.open(path) as im:
+                  im.verify()
+              print(path.name, path.stat().st_size)
+          PY
+      - name: Pack smoke folder
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd racibor_smoke
+          zip -r ../racibor-nextgen-wayback-smoke.zip originals thumbs manifest.csv summary.json
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: racibor-nextgen-wayback-smoke-${{ github.run_id }}
+          path: |
+            racibor_smoke/
+            racibor-nextgen-wayback-smoke.zip
+          compression-level: 0
+          retention-days: 90
+          if-no-files-found: error
