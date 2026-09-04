@@ -2,6 +2,7 @@ from snowmagazin_crawler.wayback_recovery import (
     build_cdx_url,
     select_image_snapshot,
     wayback_raw_url,
+    wayback_replay_candidates,
 )
 
 
@@ -35,3 +36,15 @@ def test_wayback_raw_url_uses_id_modifier_to_preserve_original_bytes():
         'https://web.archive.org/web/20161212000000id_/'
         'http://www.snowmagazin.sk/wp-content/uploads/2014/11/photo.jpg'
     )
+
+
+def test_wayback_replay_candidates_try_raw_then_image_then_standard_replay():
+    snap = {
+        'timestamp': '20161212000000',
+        'original': 'http://www.snowmagazin.sk/wp-content/gallery/elbrus/01.jpg',
+    }
+    assert wayback_replay_candidates(snap) == [
+        'https://web.archive.org/web/20161212000000id_/http://www.snowmagazin.sk/wp-content/gallery/elbrus/01.jpg',
+        'https://web.archive.org/web/20161212000000im_/http://www.snowmagazin.sk/wp-content/gallery/elbrus/01.jpg',
+        'https://web.archive.org/web/20161212000000/http://www.snowmagazin.sk/wp-content/gallery/elbrus/01.jpg',
+    ]
