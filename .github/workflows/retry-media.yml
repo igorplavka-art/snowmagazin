@@ -1,0 +1,152 @@
+name: Retry failed Snowmagazin media
+
+on:
+  push:
+    branches:
+      - crawler-v1
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  retry:
+    if: contains(github.event.head_commit.message, '[retry-media]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Download media manifests
+        uses: actions/download-artifact@v4
+        with:
+          name: snowmagazin-media-manifests-33889118912
+          path: input
+          repository: igorplavka-art/snowmagazin
+          run-id: 33889118912
+          github-token: ${{ github.token }}
+      - name: Retry transient media failures slowly
+        env:
+          PYTHONPATH: src
+        shell: bash
+        run: |
+          python - <<'PY'
+          import csv, json, time
+          from pathlib import Path
+          import requests
+          from snowmagazin_crawler.media import media_candidates, _looks_like_image
+
+          src = Path('input/media_out/media_files.csv')
+          out = Path('retry_out')
+          rows = list(csv.DictReader(src.open(encoding='utf-8')))
+          targets = [r for r in rows if r.get('status') == 'error' and (
+              'HTTP 429' in r.get('error','') or 'HTTP 403' in r.get('error','') or
+              'ConnectionError' in r.get('error','') or 'Timeout' in r.get('error','')
+          )]
+          session = requests.Session()
+          session.headers.update({
+              'User-Agent': 'Mozilla/5.0 (compatible; SnowmagazinArchiveRecovery/1.0)',
+              'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+              'Referer': 'https://snowmagazin.relaxmagazin.sk/',
+          })
+          results=[]
+          for n,row in enumerate(targets,1):
+              source=row['source_url']
+              rel=Path(row['path'])
+              parts=rel.parts
+              if parts and parts[0]=='media_out': rel=Path(*parts[1:])
+              dest=out/rel
+              status='error'; resolved=''; err=row.get('error','')
+              for candidate in media_candidates(source):
+                  for attempt in range(5):
+                      try:
+                          resp=session.get(candidate,timeout=45,allow_redirects=True)
+                          if resp.status_code==429:
+                              wait=resp.headers.get('Retry-After')
+                              try: wait=float(wait)
+                              except Exception: wait=min(12,2.0*(attempt+1))
+                              time.sleep(max(1.5,min(wait,20)))
+                              err='HTTP 429'
+                              continue
+                          if resp.status_code>=500:
+                              err=f'HTTP {resp.status_code}'
+                              time.sleep(1.5*(attempt+1)); continue
+                          if resp.status_code>=400:
+                              err=f'HTTP {resp.status_code}'; break
+                          ctype=resp.headers.get('Content-Type','')
+                          if not _looks_like_image(resp.content,ctype):
+                              err=f'not-image content-type={ctype or "unknown"}'; break
+                          dest.parent.mkdir(parents=True,exist_ok=True)
+                          dest.write_bytes(resp.content)
+                          status='ok'; resolved=candidate; err=''; break
+                      except Exception as exc:
+                          err=f'{type(exc).__name__}: {exc}'
+                          time.sleep(1.5*(attempt+1))
+                  if status=='ok': break
+              results.append({**row,'retry_status':status,'retry_resolved_url':resolved,'retry_error':err,'retry_path':str(dest)})
+              time.sleep(0.35)
+              if n%50==0: print(f'retried {n}/{len(targets)}')
+          fields=list(rows[0].keys())+['retry_status','retry_resolved_url','retry_error','retry_path']
+          with (out/'retry_results.csv').open('w',encoding='utf-8',newline='') as fh:
+              w=csv.DictWriter(fh,fieldnames=fields); w.writeheader(); w.writerows(results)
+          summary={
+              'targeted':len(targets),
+              'recovered':sum(r['retry_status']=='ok' for r in results),
+              'still_failed':sum(r['retry_status']!='ok' for r in results),
+          }
+          (out/'retry_summary.json').write_text(json.dumps(summary,ensure_ascii=False,indent=2),encoding='utf-8')
+          print(json.dumps(summary))
+          PY
+      - name: Pack recovered files into Drive-safe chunks
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import zipfile
+          root=Path('retry_out')
+          files=sorted(p for p in root.rglob('*') if p.is_file() and p.name not in {'retry_results.csv','retry_summary.json'})
+          limit=70*1024*1024
+          groups=[]; cur=[]; size=0
+          for p in files:
+              n=p.stat().st_size
+              if cur and size+n>limit: groups.append(cur); cur=[]; size=0
+              cur.append(p); size+=n
+          if cur: groups.append(cur)
+          for idx,group in enumerate(groups,1):
+              target=root/f'recovered-media-part{idx:02d}.zip'
+              with zipfile.ZipFile(target,'w',compression=zipfile.ZIP_STORED,allowZip64=True) as zf:
+                  for p in group: zf.write(p,p.relative_to(root))
+              print(target,target.stat().st_size)
+          PY
+      - name: Upload retry manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: media-retry-manifest
+          path: |
+            retry_out/retry_results.csv
+            retry_out/retry_summary.json
+          if-no-files-found: error
+      - name: Upload retry part 01
+        uses: actions/upload-artifact@v4
+        with: {name: media-retry-part01, path: retry_out/recovered-media-part01.zip, compression-level: 0, if-no-files-found: warn}
+      - name: Upload retry part 02
+        uses: actions/upload-artifact@v4
+        with: {name: media-retry-part02, path: retry_out/recovered-media-part02.zip, compression-level: 0, if-no-files-found: warn}
+      - name: Upload retry part 03
+        uses: actions/upload-artifact@v4
+        with: {name: media-retry-part03, path: retry_out/recovered-media-part03.zip, compression-level: 0, if-no-files-found: warn}
+      - name: Upload retry part 04
+        uses: actions/upload-artifact@v4
+        with: {name: media-retry-part04, path: retry_out/recovered-media-part04.zip, compression-level: 0, if-no-files-found: warn}
+      - name: Upload retry part 05
+        uses: actions/upload-artifact@v4
+        with: {name: media-retry-part05, path: retry_out/recovered-media-part05.zip, compression-level: 0, if-no-files-found: warn}
+      - name: Upload retry part 06
+        uses: actions/upload-artifact@v4
+        with: {name: media-retry-part06, path: retry_out/recovered-media-part06.zip, compression-level: 0, if-no-files-found: warn}
