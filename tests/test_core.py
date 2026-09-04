@@ -64,3 +64,29 @@ def test_is_article_url_rejects_taxonomy_admin_pagination_and_foreign_urls():
         'https://example.com/foo/',
     ]
     assert all(not is_article_url(url) for url in bad)
+
+
+def test_normalize_wp_post_uses_embedded_author_and_term_names_when_available():
+    post = {
+        'id': 77,
+        'date': '2011-01-01T00:00:00',
+        'link': 'https://snowmagazin.relaxmagazin.sk/embedded/',
+        'slug': 'embedded',
+        'title': {'rendered': 'Embedded'},
+        'excerpt': {'rendered': ''},
+        'content': {'rendered': '<p>Body</p>'},
+        'author': 8,
+        'categories': [2],
+        'tags': [9],
+        '_embedded': {
+            'author': [{'id': 8, 'name': 'Marek Parajka'}],
+            'wp:term': [
+                [{'id': 2, 'name': 'Freeride', 'taxonomy': 'category'}],
+                [{'id': 9, 'name': 'Jasná', 'taxonomy': 'post_tag'}],
+            ],
+        },
+    }
+    article = normalize_wp_post(post)
+    assert article['author_name'] == 'Marek Parajka'
+    assert article['categories'] == ['Freeride']
+    assert article['tags'] == ['Jasná']
