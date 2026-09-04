@@ -35,18 +35,18 @@ jobs:
           python - <<'PY'
           import csv
           import json
+          import random
           import time
           from collections import defaultdict
-          from concurrent.futures import ThreadPoolExecutor, as_completed
           from pathlib import Path
           from urllib.parse import urlparse
           import requests
 
+          from snowmagazin_crawler.wayback_assets import wayback_html_replay_candidates
           from snowmagazin_crawler.wayback_recovery import (
               extract_wayback_gallery_pairs,
               extract_wayback_snapshot_folders,
               query_cdx,
-              wayback_raw_url,
           )
 
           prefixes = [
@@ -55,8 +55,15 @@ jobs:
               'http://snowmagazin.sk/',
               'https://snowmagazin.sk/',
           ]
+
           session = requests.Session()
-          session.headers.update({'User-Agent': 'SnowmagazinArchiveRecovery/1.0'})
+          session.headers.update({
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+              'Accept-Language': 'sk-SK,sk;q=0.9,en;q=0.8',
+              'Cache-Control': 'max-age=0',
+              'Upgrade-Insecure-Requests': '1',
+          })
 
           page_rows = []
           seen_urls = set()
@@ -80,49 +87,65 @@ jobs:
                   page_rows.append(row)
 
           def fetch_snapshot(row):
-              snapshot = wayback_raw_url(row)
-              s = requests.Session()
-              s.headers.update({'User-Agent': 'SnowmagazinArchiveRecovery/1.0'})
-              try:
-                  response = s.get(snapshot, timeout=45, allow_redirects=True)
-              except Exception as exc:
-                  return {
-                      'archived_url': row.get('original',''),
-                      'timestamp': row.get('timestamp',''),
-                      'snapshot_url': snapshot,
-                      'http_status': '',
-                      'folders': [],
-                      'pairs': {},
-                      'error': f'{type(exc).__name__}: {exc}',
-                  }
-              if response.status_code >= 400:
-                  return {
-                      'archived_url': row.get('original',''),
-                      'timestamp': row.get('timestamp',''),
-                      'snapshot_url': snapshot,
-                      'http_status': response.status_code,
-                      'folders': [],
-                      'pairs': {},
-                      'error': f'HTTP {response.status_code}',
-                  }
-              html = response.text
+              candidates = wayback_html_replay_candidates(row)
+              # Browse-like replay first; raw replay only as a fallback.
+              candidates = [candidates[1], candidates[0]]
+              errors = []
+              for candidate_index, snapshot in enumerate(candidates):
+                  for attempt in range(3):
+                      try:
+                          response = session.get(snapshot, timeout=45, allow_redirects=True)
+                      except Exception as exc:
+                          errors.append(f'{type(exc).__name__}: {exc}')
+                          time.sleep(8 + attempt * 12 + random.uniform(0, 4))
+                          continue
+
+                      if response.status_code in (429, 500, 502, 503, 504):
+                          errors.append(f'HTTP {response.status_code}')
+                          time.sleep(12 + attempt * 18 + random.uniform(0, 6))
+                          continue
+
+                      if response.status_code >= 400:
+                          errors.append(f'HTTP {response.status_code}')
+                          break
+
+                      html = response.text
+                      return {
+                          'archived_url': row.get('original',''),
+                          'timestamp': row.get('timestamp',''),
+                          'snapshot_url': snapshot,
+                          'http_status': response.status_code,
+                          'folders': extract_wayback_snapshot_folders(html),
+                          'pairs': extract_wayback_gallery_pairs(html),
+                          'error': '',
+                      }
+
+                  if candidate_index == 0:
+                      time.sleep(4 + random.uniform(0, 3))
+
               return {
                   'archived_url': row.get('original',''),
                   'timestamp': row.get('timestamp',''),
-                  'snapshot_url': snapshot,
-                  'http_status': response.status_code,
-                  'folders': extract_wayback_snapshot_folders(html),
-                  'pairs': extract_wayback_gallery_pairs(html),
-                  'error': '',
+                  'snapshot_url': candidates[-1],
+                  'http_status': '',
+                  'folders': [],
+                  'pairs': {},
+                  'error': '; '.join(errors[-4:]),
               }
 
           results = []
-          with ThreadPoolExecutor(max_workers=8) as executor:
-              futures = [executor.submit(fetch_snapshot, row) for row in page_rows]
-              for i, future in enumerate(as_completed(futures), 1):
-                  results.append(future.result())
-                  if i % 100 == 0:
-                      print('site snapshots', i, '/', len(futures), flush=True)
+          for i, row in enumerate(page_rows, 1):
+              result = fetch_snapshot(row)
+              results.append(result)
+              if i % 25 == 0 or result['folders']:
+                  print(
+                      'site snapshot', i, '/', len(page_rows),
+                      'folders', len(result['folders']),
+                      'status', result['http_status'] or 'error',
+                      flush=True,
+                  )
+              # Deliberately emulate slow manual browsing so Wayback is not flooded.
+              time.sleep(2.5 + random.uniform(0.5, 2.0))
 
           folder_pages = defaultdict(set)
           id_folders = defaultdict(set)
