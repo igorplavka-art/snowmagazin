@@ -1,0 +1,378 @@
+name: Recover NextGEN galleries directly from live Snowmagazin
+
+on:
+  push:
+    branches:
+      - crawler-v1
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  recover:
+    if: contains(github.event.head_commit.message, '[direct-live-galleries]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run tests
+        env:
+          PYTHONPATH: src
+        run: pytest -q
+
+      - name: Download known gallery folder sources
+        uses: actions/download-artifact@v4
+        with:
+          name: wayback-gallery-folders-33899806543
+          path: global_index
+          repository: igorplavka-art/snowmagazin
+          run-id: 33899806543
+          github-token: ${{ github.token }}
+
+      - name: Download article gallery mapping
+        uses: actions/download-artifact@v4
+        with:
+          name: wayback-article-gallery-map-33900426871
+          path: article_map
+          repository: igorplavka-art/snowmagazin
+          run-id: 33900426871
+          github-token: ${{ github.token }}
+
+      - name: Download article corpus
+        uses: actions/download-artifact@v4
+        with:
+          name: snowmagazin-archive-full-33882322286
+          path: article_input
+          repository: igorplavka-art/snowmagazin
+          run-id: 33882322286
+          github-token: ${{ github.token }}
+
+      - name: Extract article corpus
+        shell: bash
+        run: |
+          mkdir -p article_archive
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          with ZipFile(Path('article_input/snowmagazin-archive.zip')) as z:
+              z.extractall('article_archive')
+          PY
+
+      - name: Recover directly from live hosts
+        env:
+          PYTHONPATH: src
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv
+          import hashlib
+          import json
+          import re
+          import time
+          from collections import defaultdict
+          from concurrent.futures import ThreadPoolExecutor, as_completed
+          from pathlib import Path
+          from urllib.parse import unquote, urljoin, urlparse
+
+          import requests
+          from bs4 import BeautifulSoup
+
+          from snowmagazin_crawler.media import _looks_like_image
+          from snowmagazin_crawler.wayback_recovery import query_cdx
+
+          IMAGE_RE = re.compile(r'\.(?:jpe?g|png|gif|webp)(?:$|[?#])', re.I)
+          GALLERY_RE = re.compile(r'/wp-content/gallery/([^/]+)/([^\"\'<>\s?#]+\.(?:jpe?g|png|gif|webp))', re.I)
+          LIVE_HOSTS = [
+              'https://snowmagazin.relaxmagazin.sk',
+              'https://relaxmagazin.sk',
+              'https://www.snowmagazin.sk',
+              'http://www.snowmagazin.sk',
+          ]
+          LEGACY_PREFIXES = [
+              'http://www.snowmagazin.sk/wp-content/gallery/{folder}/',
+              'https://www.snowmagazin.sk/wp-content/gallery/{folder}/',
+              'http://snowmagazin.sk/wp-content/gallery/{folder}/',
+              'https://snowmagazin.sk/wp-content/gallery/{folder}/',
+          ]
+
+          folders = set()
+          known_paths = defaultdict(set)
+
+          # 1) Global Wayback index: folder names + exact historical paths.
+          with open('global_index/gallery_folders.csv', encoding='utf-8') as fh:
+              for row in csv.DictReader(fh):
+                  if row.get('folder'):
+                      folders.add(row['folder'])
+          gf = Path('global_index/gallery_files.csv')
+          if gf.exists():
+              with gf.open(encoding='utf-8') as fh:
+                  for row in csv.DictReader(fh):
+                      folder = row.get('folder','')
+                      rel = row.get('relative_path','')
+                      if folder:
+                          folders.add(folder)
+                      if folder and rel and IMAGE_RE.search(rel):
+                          known_paths[folder].add(rel.lstrip('/'))
+
+          # 2) Folder names mapped from archived article snapshots.
+          with open('article_map/new_id_folder_mapping.csv', encoding='utf-8') as fh:
+              for row in csv.DictReader(fh):
+                  for folder in row.get('folders','').split(';'):
+                      folder = folder.strip()
+                      if folder:
+                          folders.add(folder)
+
+          # 3) Exact gallery filenames still present in our article archive HTML/metadata.
+          for p in Path('article_archive').rglob('*'):
+              if not p.is_file() or p.suffix.lower() not in {'.html','.json','.txt'}:
+                  continue
+              try:
+                  text = p.read_text(encoding='utf-8', errors='ignore')
+              except Exception:
+                  continue
+              for m in GALLERY_RE.finditer(text):
+                  folder, rel = m.group(1), m.group(2)
+                  folders.add(folder)
+                  known_paths[folder].add(unquote(rel).lstrip('/'))
+
+          # 4) Query CDX per recovered folder to enumerate historical filenames, but use them only against live hosts.
+          cdx = requests.Session()
+          cdx.headers.update({'User-Agent':'SnowmagazinArchiveRecovery/1.0'})
+          cdx_meta = []
+          for idx, folder in enumerate(sorted(folders), 1):
+              before = len(known_paths[folder])
+              for tmpl in LEGACY_PREFIXES:
+                  target = tmpl.format(folder=folder)
+                  rows, meta = query_cdx(cdx, target, 'prefix', image_only=False, limit=10000)
+                  cdx_meta.append({'folder':folder,'target':target,'captures':len(rows),**meta})
+                  for row in rows:
+                      path = urlparse(row.get('original','')).path
+                      marker = f'/wp-content/gallery/{folder}/'
+                      pos = path.lower().find(marker.lower())
+                      if pos < 0:
+                          continue
+                      rel = unquote(path[pos+len(marker):]).lstrip('/')
+                      if rel and IMAGE_RE.search(rel):
+                          known_paths[folder].add(rel)
+              print('folder', idx, '/', len(folders), folder, 'known paths', len(known_paths[folder]), '(+', len(known_paths[folder])-before, 'from CDX)', flush=True)
+              time.sleep(0.15)
+
+          # 5) Try live directory indexes; if exposed, enumerate anything not seen historically.
+          index_results = []
+          for folder in sorted(folders):
+              for host in LIVE_HOSTS[:3]:
+                  url = f'{host}/wp-content/gallery/{folder}/'
+                  try:
+                      r = requests.get(url, timeout=20, allow_redirects=True, headers={'User-Agent':'Mozilla/5.0'})
+                      added = 0
+                      if r.status_code < 400 and 'text/html' in (r.headers.get('Content-Type','').lower()):
+                          soup = BeautifulSoup(r.text, 'html.parser')
+                          for a in soup.find_all('a', href=True):
+                              href = a.get('href','')
+                              full = urljoin(url, href)
+                              pp = urlparse(full).path
+                              marker = f'/wp-content/gallery/{folder}/'
+                              pos = pp.lower().find(marker.lower())
+                              if pos < 0:
+                                  continue
+                              rel = unquote(pp[pos+len(marker):]).lstrip('/')
+                              if rel and IMAGE_RE.search(rel):
+                                  if rel not in known_paths[folder]:
+                                      added += 1
+                                  known_paths[folder].add(rel)
+                      index_results.append({'folder':folder,'url':url,'http_status':r.status_code,'added_paths':added,'error':''})
+                  except Exception as exc:
+                      index_results.append({'folder':folder,'url':url,'http_status':'','added_paths':0,'error':f'{type(exc).__name__}: {exc}'})
+
+          # 6) Derive original paths from NextGEN thumbs/backups.
+          for folder in list(folders):
+              derived = set()
+              for rel in known_paths[folder]:
+                  low = rel.lower()
+                  if low.startswith('thumbs/thumbs_'):
+                      derived.add(rel.split('/',1)[1][7:])
+                  elif low.startswith('backup/'):
+                      derived.add(rel.split('/',1)[1])
+              known_paths[folder].update(derived)
+
+          # 7) For folders with no known filenames, do a small bounded numeric probe only.
+          probe_paths = defaultdict(list)
+          for folder in folders:
+              if known_paths[folder]:
+                  continue
+              for i in range(1, 41):
+                  for fmt in ('{n}.jpg','{n:02d}.jpg','{n:03d}.jpg'):
+                      probe_paths[folder].append(fmt.format(n=i))
+
+          out = Path('direct_live_nextgen')
+          files_root = out / 'files'
+          files_root.mkdir(parents=True, exist_ok=True)
+
+          jobs = []
+          for folder in sorted(folders):
+              rels = sorted(known_paths[folder]) or probe_paths[folder]
+              for rel in rels:
+                  jobs.append((folder, rel, bool(known_paths[folder])))
+
+          def safe_rel(rel):
+              parts=[]
+              for part in Path(rel).parts:
+                  if part in ('','.','..'):
+                      continue
+                  parts.append(re.sub(r'[^A-Za-z0-9._ -]+','_',part))
+              return Path(*parts) if parts else Path('image.jpg')
+
+          def fetch_one(job):
+              folder, rel, historically_named = job
+              attempts=[]
+              for host in LIVE_HOSTS:
+                  url = f'{host}/wp-content/gallery/{folder}/{rel}'
+                  try:
+                      r = requests.get(url, timeout=30, allow_redirects=True, headers={
+                          'User-Agent':'SnowmagazinArchiveRecovery/1.0 (+historical preservation; repository owner)',
+                          'Accept':'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+                      })
+                      attempts.append(f'{url} -> {r.status_code}')
+                      if r.status_code >= 400:
+                          continue
+                      if not _looks_like_image(r.content, r.headers.get('Content-Type','')):
+                          continue
+                      dest = files_root / folder / safe_rel(rel)
+                      dest.parent.mkdir(parents=True, exist_ok=True)
+                      dest.write_bytes(r.content)
+                      return {
+                          'folder':folder,'relative_path':rel,'historically_named':historically_named,
+                          'status':'ok','resolved_url':r.url,'http_status':r.status_code,
+                          'bytes':len(r.content),'sha256':hashlib.sha256(r.content).hexdigest(),
+                          'path':str(dest),'error':'','attempts':' | '.join(attempts),
+                      }
+                  except Exception as exc:
+                      attempts.append(f'{url} -> {type(exc).__name__}: {exc}')
+              return {
+                  'folder':folder,'relative_path':rel,'historically_named':historically_named,
+                  'status':'error','resolved_url':'','http_status':'','bytes':0,'sha256':'',
+                  'path':'','error':attempts[-1] if attempts else 'no attempts','attempts':' | '.join(attempts),
+              }
+
+          results=[]
+          # Moderate parallelism: direct/live recovery without hammering the origin server.
+          with ThreadPoolExecutor(max_workers=6) as ex:
+              futures=[ex.submit(fetch_one, job) for job in jobs]
+              for i, f in enumerate(as_completed(futures), 1):
+                  results.append(f.result())
+                  if i % 50 == 0:
+                      ok=sum(r['status']=='ok' for r in results)
+                      print('direct attempts', i, '/', len(futures), 'ok', ok, flush=True)
+
+          # Deduplicate identical bytes inside each folder but keep manifest evidence.
+          by_folder=defaultdict(list)
+          for r in results:
+              by_folder[r['folder']].append(r)
+
+          out.mkdir(exist_ok=True)
+          fields=['folder','relative_path','historically_named','status','resolved_url','http_status','bytes','sha256','path','error','attempts']
+          with (out/'files_manifest.csv').open('w', encoding='utf-8', newline='') as fh:
+              w=csv.DictWriter(fh, fieldnames=fields); w.writeheader()
+              for row in sorted(results,key=lambda x:(x['folder'],x['relative_path'])):
+                  w.writerow({k:row.get(k,'') for k in fields})
+
+          with (out/'folder_status.csv').open('w', encoding='utf-8', newline='') as fh:
+              flds=['folder','candidate_paths','downloaded','failed','unique_hashes','status']
+              w=csv.DictWriter(fh, fieldnames=flds); w.writeheader()
+              for folder in sorted(folders):
+                  rows=by_folder[folder]
+                  ok=[r for r in rows if r['status']=='ok']
+                  hashes={r['sha256'] for r in ok if r['sha256']}
+                  failed=sum(r['status']!='ok' for r in rows)
+                  status='recovered' if ok and failed==0 else ('partial' if ok else 'missing')
+                  w.writerow({
+                      'folder':folder,'candidate_paths':len(rows),'downloaded':len(ok),
+                      'failed':failed,'unique_hashes':len(hashes),'status':status,
+                  })
+
+          with (out/'directory_indexes.csv').open('w', encoding='utf-8', newline='') as fh:
+              flds=['folder','url','http_status','added_paths','error']
+              w=csv.DictWriter(fh, fieldnames=flds); w.writeheader()
+              for row in index_results:
+                  w.writerow({k:row.get(k,'') for k in flds})
+
+          with (out/'cdx_queries.csv').open('w', encoding='utf-8', newline='') as fh:
+              flds=['folder','target','captures','query_url','status_code','error']
+              w=csv.DictWriter(fh, fieldnames=flds); w.writeheader()
+              for row in cdx_meta:
+                  w.writerow({k:row.get(k,'') for k in flds})
+
+          summary={
+              'folders_requested':len(folders),
+              'folders_with_known_paths':sum(bool(known_paths[f]) for f in folders),
+              'candidate_paths':len(jobs),
+              'files_downloaded':sum(r['status']=='ok' for r in results),
+              'files_failed':sum(r['status']!='ok' for r in results),
+              'folders_with_files':sum(any(r['status']=='ok' for r in by_folder[f]) for f in folders),
+              'folders_missing':sum(not any(r['status']=='ok' for r in by_folder[f]) for f in folders),
+              'unique_file_hashes':len({r['sha256'] for r in results if r['status']=='ok' and r['sha256']}),
+          }
+          (out/'summary.json').write_text(json.dumps(summary,ensure_ascii=False,indent=2),encoding='utf-8')
+          print(json.dumps(summary),flush=True)
+          PY
+
+      - name: Pack recovered live gallery files
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import zipfile
+          root=Path('direct_live_nextgen/files')
+          out=Path('direct_live_parts'); out.mkdir(exist_ok=True)
+          files=sorted(p for p in root.rglob('*') if p.is_file()) if root.exists() else []
+          limit=60*1024*1024
+          groups=[]; current=[]; size=0
+          for p in files:
+              n=p.stat().st_size
+              if current and size+n>limit:
+                  groups.append(current); current=[]; size=0
+              current.append(p); size+=n
+          if current: groups.append(current)
+          for i,group in enumerate(groups,1):
+              target=out/f'snowmagazin-live-nextgen-part{i:02d}.zip'
+              with zipfile.ZipFile(target,'w',compression=zipfile.ZIP_STORED,allowZip64=True) as z:
+                  for p in group:
+                      z.write(p,p.relative_to(root))
+              print(target,target.stat().st_size)
+          print('parts',len(groups),'files',len(files))
+          PY
+
+      - name: Upload direct recovery manifests
+        uses: actions/upload-artifact@v4
+        with:
+          name: direct-live-nextgen-manifests-${{ github.run_id }}
+          path: |
+            direct_live_nextgen/files_manifest.csv
+            direct_live_nextgen/folder_status.csv
+            direct_live_nextgen/directory_indexes.csv
+            direct_live_nextgen/cdx_queries.csv
+            direct_live_nextgen/summary.json
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Upload direct recovered galleries
+        uses: actions/upload-artifact@v4
+        with:
+          name: direct-live-nextgen-files-${{ github.run_id }}
+          path: direct_live_parts/*.zip
+          compression-level: 0
+          retention-days: 90
+          if-no-files-found: warn
