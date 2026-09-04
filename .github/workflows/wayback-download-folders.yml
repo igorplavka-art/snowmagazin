@@ -1,0 +1,200 @@
+name: Download recovered Wayback gallery folders
+
+on:
+  push:
+    branches:
+      - crawler-v1
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  download:
+    if: contains(github.event.head_commit.message, '[wayback-download]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run tests
+        env:
+          PYTHONPATH: src
+        run: pytest -q
+      - name: Download global Wayback folder index
+        uses: actions/download-artifact@v4
+        with:
+          name: wayback-gallery-folders-33899806543
+          path: global_index
+          repository: igorplavka-art/snowmagazin
+          run-id: 33899806543
+          github-token: ${{ github.token }}
+      - name: Download article mapping
+        uses: actions/download-artifact@v4
+        with:
+          name: wayback-article-gallery-map-33900426871
+          path: article_map
+          repository: igorplavka-art/snowmagazin
+          run-id: 33900426871
+          github-token: ${{ github.token }}
+      - name: Enumerate and download every recovered folder asset
+        env:
+          PYTHONPATH: src
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv, json, re, time
+          from collections import defaultdict
+          from concurrent.futures import ThreadPoolExecutor, as_completed
+          from pathlib import Path
+          from urllib.parse import urlparse
+          import requests
+
+          from snowmagazin_crawler.wayback_recovery import query_cdx
+          from snowmagazin_crawler.wayback_assets import download_wayback_image
+
+          IMAGE_EXT = re.compile(r'\.(?:jpe?g|png|gif|webp)(?:$|[?#])', re.I)
+          roots = [
+              'http://www.snowmagazin.sk/wp-content/gallery/{folder}/',
+              'https://www.snowmagazin.sk/wp-content/gallery/{folder}/',
+              'http://snowmagazin.sk/wp-content/gallery/{folder}/',
+              'https://snowmagazin.sk/wp-content/gallery/{folder}/',
+          ]
+
+          folders=set()
+          with open('global_index/gallery_folders.csv', encoding='utf-8') as f:
+              for row in csv.DictReader(f):
+                  if row.get('folder'): folders.add(row['folder'])
+          with open('article_map/new_id_folder_mapping.csv', encoding='utf-8') as f:
+              for row in csv.DictReader(f):
+                  for folder in row.get('folders','').split(';'):
+                      if folder: folders.add(folder)
+
+          s=requests.Session(); s.headers.update({'User-Agent':'SnowmagazinArchiveRecovery/1.0'})
+          captures={}
+          query_rows=[]
+          folder_counts=defaultdict(int)
+          for i,folder in enumerate(sorted(folders),1):
+              for template in roots:
+                  target=template.format(folder=folder)
+                  rows, meta=query_cdx(s,target,'prefix',image_only=False,limit=10000)
+                  query_rows.append({'folder':folder,'target':target,'captures':len(rows),**meta})
+                  for row in rows:
+                      path=urlparse(row.get('original','')).path
+                      marker='/wp-content/gallery/'
+                      low=path.lower()
+                      if marker not in low or not IMAGE_EXT.search(path): continue
+                      rel=path[low.index(marker)+len(marker):]
+                      parts=rel.split('/',1)
+                      if len(parts)!=2 or parts[0].lower()!=folder.lower(): continue
+                      relative=parts[1]
+                      key=(folder.lower(),relative.lower())
+                      # one deterministic capture per physical path; prefer later timestamp
+                      old=captures.get(key)
+                      if old is None or str(row.get('timestamp','')) > str(old.get('timestamp','')):
+                          captures[key]={**row,'folder':folder,'relative_path':relative}
+              print('indexed folder',i,'/',len(folders),folder,'files',sum(1 for k in captures if k[0]==folder.lower()),flush=True)
+              time.sleep(0.1)
+
+          out=Path('wayback_gallery_download')
+          files_root=out/'files'
+          manifest=[]
+
+          def worker(item):
+              row=item
+              rel=Path(row['relative_path'])
+              dest=files_root/row['folder']/rel
+              session=requests.Session(); session.headers.update({'User-Agent':'SnowmagazinArchiveRecovery/1.0'})
+              result=download_wayback_image(session,row,dest,timeout=60)
+              kind='thumbnail' if '/thumbs/' in ('/'+row['relative_path']).lower() else ('backup' if '/backup/' in ('/'+row['relative_path']).lower() else 'original')
+              return {**row,**result,'asset_kind':kind,'path':str(dest)}
+
+          with ThreadPoolExecutor(max_workers=8) as ex:
+              future_map={ex.submit(worker,row):row for row in captures.values()}
+              for idx,future in enumerate(as_completed(future_map),1):
+                  result=future.result(); manifest.append(result)
+                  folder_counts[result['folder']] += 1 if result['status']=='ok' else 0
+                  if idx % 50 == 0: print('downloaded attempts',idx,'/',len(future_map),flush=True)
+
+          out.mkdir(exist_ok=True)
+          fields=['folder','asset_kind','relative_path','timestamp','original','mimetype','statuscode','status','resolved_url','path','bytes','error']
+          with (out/'files_manifest.csv').open('w',encoding='utf-8',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=fields); w.writeheader()
+              for row in sorted(manifest,key=lambda r:(r['folder'],r['relative_path'])):
+                  w.writerow({k:row.get(k,'') for k in fields})
+          with (out/'folder_status.csv').open('w',encoding='utf-8',newline='') as f:
+              fields2=['folder','indexed_paths','downloaded','failed','status']
+              w=csv.DictWriter(f,fieldnames=fields2); w.writeheader()
+              for folder in sorted(folders):
+                  rows=[r for r in manifest if r['folder']==folder]
+                  ok=sum(r['status']=='ok' for r in rows); failed=sum(r['status']!='ok' for r in rows)
+                  status='recovered' if ok and not failed else ('partial' if ok else 'missing')
+                  w.writerow({'folder':folder,'indexed_paths':len(rows),'downloaded':ok,'failed':failed,'status':status})
+          with (out/'queries.csv').open('w',encoding='utf-8',newline='') as f:
+              fields3=['folder','target','captures','query_url','status_code','error']
+              w=csv.DictWriter(f,fieldnames=fields3); w.writeheader();
+              for row in query_rows: w.writerow({k:row.get(k,'') for k in fields3})
+          summary={
+              'folders_requested':len(folders),
+              'unique_paths_indexed':len(captures),
+              'files_downloaded':sum(r['status']=='ok' for r in manifest),
+              'files_failed':sum(r['status']!='ok' for r in manifest),
+              'folders_with_files':sum(1 for folder in folders if any(r['folder']==folder and r['status']=='ok' for r in manifest)),
+              'folders_missing':sum(1 for folder in folders if not any(r['folder']==folder and r['status']=='ok' for r in manifest)),
+              'originals_downloaded':sum(r['status']=='ok' and r['asset_kind']=='original' for r in manifest),
+              'thumbnails_downloaded':sum(r['status']=='ok' and r['asset_kind']=='thumbnail' for r in manifest),
+          }
+          (out/'summary.json').write_text(json.dumps(summary,ensure_ascii=False,indent=2),encoding='utf-8')
+          print(json.dumps(summary),flush=True)
+          PY
+      - name: Pack recovered files into chunks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import zipfile
+          root=Path('wayback_gallery_download/files')
+          out=Path('wayback_gallery_parts'); out.mkdir(exist_ok=True)
+          files=sorted(p for p in root.rglob('*') if p.is_file()) if root.exists() else []
+          limit=60*1024*1024
+          groups=[]; current=[]; size=0
+          for p in files:
+              n=p.stat().st_size
+              if current and size+n>limit:
+                  groups.append(current); current=[]; size=0
+              current.append(p); size+=n
+          if current: groups.append(current)
+          for i,group in enumerate(groups,1):
+              target=out/f'snowmagazin-wayback-nextgen-part{i:02d}.zip'
+              with zipfile.ZipFile(target,'w',compression=zipfile.ZIP_STORED,allowZip64=True) as z:
+                  for p in group: z.write(p,p.relative_to(root))
+              print(target,target.stat().st_size)
+          print('parts',len(groups),'files',len(files))
+          PY
+      - name: Upload manifests
+        uses: actions/upload-artifact@v4
+        with:
+          name: wayback-gallery-download-manifests-${{ github.run_id }}
+          path: |
+            wayback_gallery_download/files_manifest.csv
+            wayback_gallery_download/folder_status.csv
+            wayback_gallery_download/queries.csv
+            wayback_gallery_download/summary.json
+          retention-days: 90
+          if-no-files-found: error
+      - name: Upload recovered gallery ZIP parts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wayback-gallery-files-${{ github.run_id }}
+          path: wayback_gallery_parts/*.zip
+          compression-level: 0
+          retention-days: 90
+          if-no-files-found: warn
