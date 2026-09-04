@@ -83,6 +83,16 @@ jobs:
             python -m snowmagazin_crawler --output out --limit 10 --delay 0.05 | tee crawl-summary.json
           fi
 
+      - name: Probe missing article HTML
+        if: contains(env.COMMIT_MESSAGE, '[probe]')
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p probe
+          curl -L --fail --silent --show-error 'https://snowmagazin.relaxmagazin.sk/freeridove-videa-tyzdna-cast-8-popow-francuzsko-a-hokkaido/' -o probe/freeride-8.html
+          curl -L --fail --silent --show-error 'https://snowmagazin.relaxmagazin.sk/kompletne-ceny-listkov-do-stredisk-na-slovensku-su-iba-na-snowmagazine/' -o probe/ceny.html
+          curl -L --fail --silent --show-error 'https://snowmagazin.relaxmagazin.sk/zopar-postrehov-ako-si-kupit-freeridove-lyze/' -o probe/freeride-lyze.html
+
       - name: Package archive
         run: zip -qr snowmagazin-archive.zip out/archive out/articles.csv crawl-summary.json
 
@@ -94,5 +104,6 @@ jobs:
             snowmagazin-archive.zip
             out/articles.csv
             crawl-summary.json
+            probe/
           retention-days: 30
           if-no-files-found: error
