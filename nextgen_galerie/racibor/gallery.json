@@ -1,0 +1,88 @@
+{
+  "gallery_id": [
+    58
+  ],
+  "folder_name": "racibor",
+  "source_article_urls": [
+    "https://snowmagazin.relaxmagazin.sk/aktualny-minireport-zo-strediska-racibor-pod-oravskym-podzamkom/"
+  ],
+  "source_article_titles": [
+    "Aktuálny minireport zo strediska Racibor pod Oravským Podzámkom"
+  ],
+  "discovered_file_count": 12,
+  "recovered_file_count": 12,
+  "failed_file_count": 0,
+  "status": "COMPLETE",
+  "wayback_sources": [
+    "https://web.archive.org/web/20160324140414/http://www.snowmagazin.sk/2011/01/aktualny-minireport-zo-strediska-racibor-pod-oravskym-podzamkom/"
+  ],
+  "live_sources": [],
+  "recovery_confidence": "high",
+  "completeness_basis": "All 12 original links from the archived NextGEN gallery 58 are recovered. The archived gallery has no pagination links. COMPLETE describes this documented gallery snapshot.",
+  "notes": [
+    "12 thumbnail variants ignored because original files are recovered.",
+    "Bytes verified with image decoding and SHA-256; Drive listing sizes match all 12 files."
+  ],
+  "files": [
+    {
+      "name": "1.jpg",
+      "sha256": "e607b393f6756f9d56770774b65f27e7b6f29a615652f4d9210355c3311e3741",
+      "bytes": 136413
+    },
+    {
+      "name": "10.jpg",
+      "sha256": "4edde9b0a97cae039fc698134ee7a516d689f5ae5a1b22afe2dfe48507a1aa4c",
+      "bytes": 144389
+    },
+    {
+      "name": "11.jpg",
+      "sha256": "5488fdc46dc412a4cdab890a252aad80e240563b8bb9047708d20ed022d6bb7f",
+      "bytes": 121252
+    },
+    {
+      "name": "12.jpg",
+      "sha256": "8925f651101af37c97ff17cf3bfcd0365b02aae4c25e00d0f460113a15ae3fa1",
+      "bytes": 139880
+    },
+    {
+      "name": "2.jpg",
+      "sha256": "ed837958f3a509af41a12ecde4bcb5b58412bac7ebb49068958d582b5424029c",
+      "bytes": 93073
+    },
+    {
+      "name": "3.jpg",
+      "sha256": "b55a1a82a7b8ca9b5f46b9de158b4dcbc3a548bf8055e41f826ad3a03e5ff918",
+      "bytes": 112668
+    },
+    {
+      "name": "4.jpg",
+      "sha256": "db8a745c7e8f2522eea946fd8a27003c228373323457f0e60033bc39cdaa2b66",
+      "bytes": 112490
+    },
+    {
+      "name": "5.jpg",
+      "sha256": "ab6a8d8e745995a1aeeedeebd3b2a473da3d766ef75ef356967a32147c270067",
+      "bytes": 91485
+    },
+    {
+      "name": "6.jpg",
+      "sha256": "f092e46c18e0d901289969d94f74b5e84c4b7f030d5802b06eec0fc8b092ab33",
+      "bytes": 97061
+    },
+    {
+      "name": "7.jpg",
+      "sha256": "f07097ee9b6f482ad3a76dc38e0c601bb89e88c195259da39263dfc2d1fbdfb6",
+      "bytes": 78754
+    },
+    {
+      "name": "8.jpg",
+      "sha256": "42b61f399d2647bb25f9a2fa3f106bbd0ddb2aaa7df5505fa37f5159383fae63",
+      "bytes": 99962
+    },
+    {
+      "name": "9.jpg",
+      "sha256": "b879761379a47761629478dbb54af1cc1d9063e024d82e7b0acfc6c559cf7244",
+      "bytes": 103260
+    }
+  ]
+}
