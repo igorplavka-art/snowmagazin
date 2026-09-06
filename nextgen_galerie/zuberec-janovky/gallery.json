@@ -1,0 +1,25 @@
+{
+  "gallery_id": [127],
+  "folder_name": "zuberec-janovky",
+  "source_article_urls": ["https://snowmagazin.relaxmagazin.sk/zuberec-janovky-stredisko-vhodne-na-vyucbu-lyzovania/"],
+  "source_article_titles": ["Zuberec – Janovky, stredisko vhodné na výučbu lyžovania"],
+  "discovered_file_count": 6,
+  "recovered_file_count": 6,
+  "failed_file_count": 0,
+  "status": "COMPLETE_ARCHIVED_SET",
+  "live_shortcode_evidence": "[nggallery id=127]",
+  "recovery_confidence": "high",
+  "completeness_basis": "Wayback gallery-path index contains exactly six original image paths and six matching NextGEN thumbnail paths for folder zuberec-janovky. All six originals are present on Drive and byte-validated. COMPLETE_ARCHIVED_SET refers to the documented archived set; absence of never-archived historical files cannot be proven.",
+  "notes": [
+    "All six Drive files decode as JPEG and have unique SHA-256 hashes.",
+    "Original and thumbnail basenames pair 1:1 in archived evidence."
+  ],
+  "files": [
+    {"name":"janovky1.jpg","source_url":"http://www.snowmagazin.sk/wp-content/gallery/zuberec-janovky/janovky1.jpg","wayback_timestamp":"20160527032917","sha256":"08e8cc0aa3697d6b56fc79a1854e7fab52958242060486bc07fd15df18fb9537","bytes":99066},
+    {"name":"janovky2.jpg","source_url":"http://www.snowmagazin.sk/wp-content/gallery/zuberec-janovky/janovky2.jpg","wayback_timestamp":"20160527121142","sha256":"ee37479a49533d771944754e553c682dc0f39267fa359cef9aa2d63fab2934ff","bytes":91045},
+    {"name":"janovky3.jpg","source_url":"http://www.snowmagazin.sk/wp-content/gallery/zuberec-janovky/janovky3.jpg","wayback_timestamp":"20160527055416","sha256":"205ccf91dd0f66464f6635d178a32780edc34928e3f37eefffab287546dd8a1c","bytes":96804},
+    {"name":"janovky4.jpg","source_url":"http://www.snowmagazin.sk/wp-content/gallery/zuberec-janovky/janovky4.jpg","wayback_timestamp":"20160527120941","sha256":"7ba83ca4a00183a3c33917efb53a9e8b55e50e2ddeb142ba95fda06d5de5d2c7","bytes":111188},
+    {"name":"janovky5.jpg","source_url":"http://www.snowmagazin.sk/wp-content/gallery/zuberec-janovky/janovky5.jpg","wayback_timestamp":"20160527065730","sha256":"61433f22d3e1388cd7bec9818ef774ae3d1d876166f887216e1997b372b06ffe","bytes":91039},
+    {"name":"milotin-janovky-mapa.jpg","source_url":"http://www.snowmagazin.sk/wp-content/gallery/zuberec-janovky/milotin-janovky-mapa.jpg","wayback_timestamp":"20160527042915","sha256":"140cb4a0cf01d9e3202f289a7c9b5498cd89fe5acbad2ad37cf7151dbea78f35","bytes":124682}
+  ]
+}
