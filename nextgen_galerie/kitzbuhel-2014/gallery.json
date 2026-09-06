@@ -1,0 +1,18 @@
+{
+  "folder_name": "kitzbuhel-2014",
+  "verified_gallery_id": 218,
+  "candidate_gallery_ids": [],
+  "source_article_url": "https://snowmagazin.relaxmagazin.sk/lyzovacka-na-legendarnom-hahnenkamme-v-kitzbuheli/",
+  "source_article_title": "Lyžovačka na legendárnom Hahnenkamme v Kitzbüheli",
+  "article_shortcode_evidence": ["[nggallery id=218]"],
+  "gallery_id_confidence": "verified",
+  "status": "PARTIAL_RECOVERY",
+  "archive_index": {"indexed_asset_records": 27, "original_records": 2, "thumbnail_records": 25, "unique_basenames": 27, "original_thumbnail_overlap": 0},
+  "recovered_original_count": 2,
+  "missing_original_candidates_from_archived_basenames": ["p1040820.jpg","p1040826.jpg","p1040829.jpg","p1040830.jpg","p1040833.jpg","p1040838.jpg","p1040840.jpg","p1040848.jpg","p1040849.jpg","p1040852.jpg","p1040870.jpg","p1040874.jpg","p1040876.jpg","p1040879.jpg","p1040880.jpg","p1040894.jpg","p1040898.jpg","p1040902.jpg","p1040903.jpg","p1040905.jpg","p1040906.jpg","p1040907.jpg","p1040909.jpg","p1040912.jpg","p1040938.jpg"],
+  "completeness_basis": "The restored article has one NextGEN shortcode (ID 218), and article image links point directly to wp-content/gallery/kitzbuhel-2014. Archived path evidence contains 27 unique basenames; only two full originals are currently recovered.",
+  "files": [
+    {"name":"p1040897.jpg","source_url":"http://www.snowmagazin.sk/wp-content/gallery/kitzbuhel-2014/p1040897.jpg","wayback_timestamp":"20140819223105","sha256":"04e96ef30be2f1ca85b3e6f5c91d73dd6c5f030dd1fd2a5e6fe4866585e2ce00","bytes":550092,"width":1200,"height":900,"format":"JPEG","drive_byte_audit":"verified"},
+    {"name":"p1040916.jpg","source_url":"http://www.snowmagazin.sk/wp-content/gallery/kitzbuhel-2014/p1040916.jpg","wayback_timestamp":"20140819223054","sha256":"a40ff1ab75e59e9189ad7c35f6ad20e85dbaa0567525ce183c87bf80296454a7","bytes":578777,"width":1200,"height":900,"format":"JPEG","drive_byte_audit":"verified"}
+  ]
+}
