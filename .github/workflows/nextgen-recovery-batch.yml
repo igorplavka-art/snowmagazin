@@ -1,0 +1,124 @@
+name: NextGEN recovery batch
+
+on:
+  workflow_dispatch:
+    inputs:
+      folders:
+        description: 'Optional comma-separated gallery folders; blank = all except racibor'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install requests pillow
+      - name: Recover indexed NextGEN originals
+        env:
+          FOLDERS: ${{ inputs.folders }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv, hashlib, json, os, random, time, zipfile
+          from collections import defaultdict
+          from io import BytesIO
+          from pathlib import Path, PurePosixPath
+          from urllib.parse import urlsplit, urlunsplit
+          import requests
+          from PIL import Image
+
+          src_dir=Path('/tmp/wayback-gallery-folders'); src_dir.mkdir(parents=True,exist_ok=True)
+          with zipfile.ZipFile('nextgen_galerie/_recovery_sources/wayback-gallery-folders.zip') as z: z.extractall(src_dir)
+          src=src_dir/'gallery_files.csv'
+          out=Path('nextgen_recovery_batch'); out.mkdir(exist_ok=True)
+          selected={x.strip() for x in os.environ.get('FOLDERS','').split(',') if x.strip()}
+          rows=list(csv.DictReader(src.open(encoding='utf-8')))
+          by_folder=defaultdict(list)
+          for r in rows:
+            if r['folder']!='racibor' and (not selected or r['folder'] in selected): by_folder[r['folder']].append(r)
+          session=requests.Session()
+          session.headers.update({'User-Agent':'Mozilla/5.0 Snowmagazin archival recovery','Accept':'image/*,*/*;q=0.8'})
+
+          def validate(content):
+            im=Image.open(BytesIO(content)); im.verify()
+          def derive_original(r):
+            if r['asset_kind']=='original': return r['original'], PurePosixPath(r['relative_path']).name
+            p=PurePosixPath(r['relative_path']); name=p.name
+            if name.startswith('thumbs_'): name=name[7:]
+            u=urlsplit(r['original']); path=u.path.replace('/thumbs/thumbs_','/')
+            return urlunsplit((u.scheme,u.netloc,path,u.query,u.fragment)), name
+          def origins(url):
+            u=urlsplit(url); vals=[]
+            for host in ['www.snowmagazin.sk','snowmagazin.sk']:
+              for scheme in ['http','https']:
+                vals.append(urlunsplit((scheme,host,u.path,u.query,u.fragment)))
+            return list(dict.fromkeys(vals))
+          def replay_urls(ts,url):
+            vals=[]
+            for origin in origins(url):
+              vals += [f'https://web.archive.org/web/{ts}id_/{origin}', f'https://web.archive.org/web/{ts}im_/{origin}', f'https://web.archive.org/web/{ts}/{origin}']
+            return vals
+
+          results=[]
+          for folder, items in sorted(by_folder.items()):
+            targets={}
+            for r in items:
+              url,name=derive_original(r); key=urlsplit(url).path.lower()
+              cur=targets.get(key)
+              if cur is None or (r['asset_kind']=='original' and cur['source_kind']!='original'):
+                targets[key]={'folder':folder,'target_url':url,'target_name':name,'timestamp':r['timestamp'],'source_kind':r['asset_kind'],'source_url':r['original']}
+            folder_dir=out/folder/'originals'; folder_dir.mkdir(parents=True,exist_ok=True)
+            print(f'[{folder}] targets={len(targets)}',flush=True)
+            for idx,t in enumerate(targets.values(),1):
+              res={**t,'status':'failed','bytes':0,'sha256':'','resolved_url':'','saved':'','error':''}; errors=[]
+              for url in replay_urls(t['timestamp'],t['target_url']) + origins(t['target_url']):
+                for attempt in range(2):
+                  try:
+                    rr=session.get(url,timeout=40,allow_redirects=True)
+                    if rr.status_code in (429,500,502,503,504):
+                      errors.append(f'{url} HTTP {rr.status_code}'); time.sleep(5+attempt*6+random.random()*2); continue
+                    if rr.status_code>=400:
+                      errors.append(f'{url} HTTP {rr.status_code}'); break
+                    validate(rr.content)
+                    dest=folder_dir/t['target_name']; dest.write_bytes(rr.content)
+                    res.update(status='ok',bytes=len(rr.content),sha256=hashlib.sha256(rr.content).hexdigest(),resolved_url=url,saved=str(dest.relative_to(out)))
+                    break
+                  except Exception as exc:
+                    errors.append(f'{url} {type(exc).__name__}: {exc}'); time.sleep(2+random.random())
+                if res['status']=='ok': break
+              if res['status']!='ok': res['error']=' | '.join(errors[-8:])
+              results.append(res)
+              print(f"  {idx}/{len(targets)} {res['status']} {t['target_name']} {res['bytes']}",flush=True)
+              time.sleep(1+random.random())
+
+          fields=['folder','target_name','timestamp','source_kind','source_url','target_url','status','bytes','sha256','resolved_url','saved','error']
+          with (out/'manifest.csv').open('w',encoding='utf-8',newline='') as f:
+            w=csv.DictWriter(f,fieldnames=fields); w.writeheader(); w.writerows(results)
+          summary={}
+          for folder in sorted({r['folder'] for r in results}):
+            rr=[r for r in results if r['folder']==folder]
+            summary[folder]={'attempted':len(rr),'ok':sum(x['status']=='ok' for x in rr),'failed':sum(x['status']!='ok' for x in rr),'bytes':sum(int(x['bytes']) for x in rr)}
+          (out/'summary.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')
+          print(json.dumps(summary,indent=2),flush=True)
+          if results and not any(r['status']=='ok' for r in results): raise SystemExit('No assets recovered')
+          PY
+      - name: Pack results
+        run: zip -r nextgen-recovery-batch.zip nextgen_recovery_batch
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nextgen-recovery-batch-${{ github.run_id }}
+          path: |
+            nextgen_recovery_batch/
+            nextgen-recovery-batch.zip
+          compression-level: 0
+          retention-days: 90
+          if-no-files-found: error
