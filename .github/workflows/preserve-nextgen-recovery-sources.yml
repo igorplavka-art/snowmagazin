@@ -55,7 +55,7 @@ jobs:
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add nextgen_galerie/_recovery_sources/wayback-gallery-folders.zip nextgen_galerie/_recovery_sources/wayback-article-gallery-map.zip
+          git add -f nextgen_galerie/_recovery_sources/wayback-gallery-folders.zip nextgen_galerie/_recovery_sources/wayback-article-gallery-map.zip
           if git diff --cached --quiet; then
             echo 'Sources already preserved'
           else
