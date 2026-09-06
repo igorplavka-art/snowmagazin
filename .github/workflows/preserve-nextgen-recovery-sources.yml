@@ -1,0 +1,64 @@
+name: Preserve NextGEN recovery sources
+
+on:
+  push:
+    branches:
+      - nextgen-recovery-main-20260905
+    paths:
+      - '.github/workflows/preserve-nextgen-recovery-sources.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  preserve:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: nextgen-recovery-main-20260905
+          fetch-depth: 0
+      - name: Download durable discovery artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p nextgen_galerie/_recovery_sources /tmp/check-folders /tmp/check-map
+          curl -fL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/9947182649/zip" \
+            -o nextgen_galerie/_recovery_sources/wayback-gallery-folders.zip
+          curl -fL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/9947420879/zip" \
+            -o nextgen_galerie/_recovery_sources/wayback-article-gallery-map.zip
+          unzip -q nextgen_galerie/_recovery_sources/wayback-gallery-folders.zip -d /tmp/check-folders
+          unzip -q nextgen_galerie/_recovery_sources/wayback-article-gallery-map.zip -d /tmp/check-map
+          python - <<'PY'
+          import csv,json
+          from pathlib import Path
+          a=Path('/tmp/check-folders')
+          b=Path('/tmp/check-map')
+          folders=list(csv.DictReader((a/'gallery_folders.csv').open()))
+          files=list(csv.DictReader((a/'gallery_files.csv').open()))
+          assert len(folders)==21, len(folders)
+          assert len(files)==391, len(files)
+          summary=json.loads((a/'summary.json').read_text())
+          assert summary['folders']==21 and summary['files']==391
+          assert (b/'new_id_folder_mapping.csv').exists()
+          assert (b/'snapshot_evidence.csv').exists()
+          assert (b/'still_unresolved_ids.csv').exists()
+          print('source validation OK:',len(folders),'folders,',len(files),'assets')
+          PY
+      - name: Commit preserved sources
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add nextgen_galerie/_recovery_sources/wayback-gallery-folders.zip nextgen_galerie/_recovery_sources/wayback-article-gallery-map.zip
+          if git diff --cached --quiet; then
+            echo 'Sources already preserved'
+          else
+            git commit -m 'Preserve NextGEN discovery artifacts in repository'
+            git push origin HEAD:nextgen-recovery-main-20260905
+          fi
