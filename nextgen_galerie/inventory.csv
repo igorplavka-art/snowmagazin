@@ -1,7 +1,7 @@
 folder,verified_gallery_id,candidate_gallery_ids,indexed_asset_records,original_records,thumbnail_records,known_archived_unique_basenames,drive_originals_verified,status,source_run_id,source_artifact_id,drive_status
-90-rokov-volkl,,,2,0,2,2,0,THUMBNAIL_EVIDENCE_ONLY,33899806543,9947182649,pending
-a-basin,,,9,0,9,9,0,THUMBNAIL_EVIDENCE_ONLY,33899806543,9947182649,pending
-elbrus-vystup,,,26,0,26,26,0,THUMBNAIL_EVIDENCE_ONLY,33899806543,9947182649,pending
+90-rokov-volkl,209,,2,0,2,4,0,PARTIAL_EVIDENCE_NO_ORIGINALS_BYTE_VERIFIED,33899806543,9947182649,pending
+a-basin,11,,9,0,9,9,0,THUMBNAIL_EVIDENCE_ONLY,33899806543,9947182649,pending
+elbrus-vystup,7,,26,0,26,26,0,THUMBNAIL_EVIDENCE_ONLY,33899806543,9947182649,pending
 freeride-kemp-1-rocnik,,,107,0,107,107,0,THUMBNAIL_EVIDENCE_ONLY,33899806543,9947182649,pending
 freeride-kemp-2013,,,18,0,18,18,0,THUMBNAIL_EVIDENCE_ONLY,33899806543,9947182649,pending
 freeridove-lyze-2011,,,5,0,5,5,0,THUMBNAIL_EVIDENCE_ONLY,33899806543,9947182649,pending
