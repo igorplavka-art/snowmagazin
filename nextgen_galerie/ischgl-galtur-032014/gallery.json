@@ -1,0 +1,15 @@
+{
+  "folder_name": "ischgl-galtur-032014",
+  "verified_gallery_id": null,
+  "candidate_gallery_ids": [214,215,216],
+  "source_article_url": "https://snowmagazin.relaxmagazin.sk/rakusky-ischgl-lyziarske-stredisko-ktore-nikdy-nespi/",
+  "source_article_title": "Rakúsky Ischgl – lyžiarske stredisko, ktoré nikdy nespí",
+  "article_shortcode_evidence": ["[nggallery id=214]","[nggallery id=215]","[nggallery id=216]"],
+  "gallery_id_confidence": "article_set_verified_folder_mapping_unresolved",
+  "status": "PARTIAL_RECOVERY",
+  "archive_index": {"indexed_asset_records":5,"original_records":1,"thumbnail_records":4,"unique_basenames":4,"original_thumbnail_overlap":1},
+  "recovered_original_count": 1,
+  "missing_original_candidates_from_archived_basenames": ["galtur2.jpg","galtur3.jpg","galtur_den.jpg"],
+  "completeness_basis": "The restored article contains three NextGEN IDs 214, 215 and 216 and directly embeds galtur1 from ischgl-galtur-032014. Available evidence does not yet prove which ID maps to the Galtür folder.",
+  "files": [{"name":"galtur1.jpg","source_url":"http://www.snowmagazin.sk/wp-content/gallery/ischgl-galtur-032014/galtur1.jpg","wayback_timestamp":"20140819214909","sha256":"37921f8a24b908444e7c58372458ec7fa8b0de5bf1ae325ca4ad8cca2b312c2c","bytes":74045,"width":1024,"height":500,"format":"JPEG","drive_byte_audit":"verified"}]
+}
