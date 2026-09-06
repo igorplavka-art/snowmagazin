@@ -20,25 +20,26 @@ jobs:
         with:
           ref: nextgen-recovery-main-20260905
           fetch-depth: 0
-      - name: Download durable discovery artifacts
+      - name: Download durable discovery and recovery artifacts
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mkdir -p nextgen_galerie/_recovery_sources /tmp/check-folders /tmp/check-map
-          curl -fL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/9947182649/zip" \
-            -o nextgen_galerie/_recovery_sources/wayback-gallery-folders.zip
-          curl -fL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/9947420879/zip" \
-            -o nextgen_galerie/_recovery_sources/wayback-article-gallery-map.zip
+          mkdir -p nextgen_galerie/_recovery_sources nextgen_galerie/_recovery_evidence /tmp/check-folders /tmp/check-map
+          curl -fL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/9947182649/zip" -o nextgen_galerie/_recovery_sources/wayback-gallery-folders.zip
+          curl -fL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/9947420879/zip" -o nextgen_galerie/_recovery_sources/wayback-article-gallery-map.zip
+          curl -fL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/9948062442/zip" -o nextgen_galerie/_recovery_evidence/wayback-gallery-download-manifests.zip
+          curl -fL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/9948062754/zip" -o nextgen_galerie/_recovery_evidence/wayback-gallery-files.zip
+          curl -fL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/9948764958/zip" -o nextgen_galerie/_recovery_evidence/direct-live-nextgen-ultrafast-manifests.zip
           unzip -q nextgen_galerie/_recovery_sources/wayback-gallery-folders.zip -d /tmp/check-folders
           unzip -q nextgen_galerie/_recovery_sources/wayback-article-gallery-map.zip -d /tmp/check-map
+          unzip -t nextgen_galerie/_recovery_evidence/wayback-gallery-download-manifests.zip >/dev/null
+          unzip -t nextgen_galerie/_recovery_evidence/wayback-gallery-files.zip >/dev/null
+          unzip -t nextgen_galerie/_recovery_evidence/direct-live-nextgen-ultrafast-manifests.zip >/dev/null
           python - <<'PY'
           import csv,json
           from pathlib import Path
-          a=Path('/tmp/check-folders')
-          b=Path('/tmp/check-map')
+          a=Path('/tmp/check-folders'); b=Path('/tmp/check-map')
           folders=list(csv.DictReader((a/'gallery_folders.csv').open()))
           files=list(csv.DictReader((a/'gallery_files.csv').open()))
           assert len(folders)==21, len(folders)
@@ -50,15 +51,15 @@ jobs:
           assert (b/'still_unresolved_ids.csv').exists()
           print('source validation OK:',len(folders),'folders,',len(files),'assets')
           PY
-      - name: Commit preserved sources
+      - name: Commit preserved sources and evidence
         run: |
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add -f nextgen_galerie/_recovery_sources/wayback-gallery-folders.zip nextgen_galerie/_recovery_sources/wayback-article-gallery-map.zip
+          git add -f nextgen_galerie/_recovery_sources/*.zip nextgen_galerie/_recovery_evidence/*.zip
           if git diff --cached --quiet; then
-            echo 'Sources already preserved'
+            echo 'Sources and evidence already preserved'
           else
-            git commit -m 'Preserve NextGEN discovery artifacts in repository'
+            git commit -m 'Preserve NextGEN discovery and recovery artifacts'
             git push origin HEAD:nextgen-recovery-main-20260905
           fi
