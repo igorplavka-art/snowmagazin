@@ -1,0 +1,15 @@
+{
+  "folder_name": "kaprun-2010",
+  "verified_gallery_id": 80,
+  "candidate_gallery_ids": [],
+  "source_article_url": "https://snowmagazin.relaxmagazin.sk/aktualna-reportaz-zo-strediska-kaprun-kitzsteinhorn/",
+  "source_article_title": "Aktuálna reportáž zo strediska Kaprun – Kitzsteinhorn",
+  "article_shortcode_evidence": ["[nggallery id=80]"],
+  "gallery_id_confidence": "high",
+  "status": "RECOVERED_ARCHIVED_ORIGINAL_COMPLETENESS_UNKNOWN",
+  "archive_index": {"indexed_asset_records": 1, "original_records": 1, "thumbnail_records": 0, "unique_basenames": 1, "original_thumbnail_overlap": 0},
+  "recovered_original_count": 1,
+  "missing_original_candidates_from_archived_basenames": [],
+  "completeness_basis": "The restored 2010 Kaprun/Kitzsteinhorn article has one NextGEN shortcode (ID 80); the archive index has one original path under kaprun-2010 and no thumbnail evidence. The one known original is recovered, but this does not prove the historical gallery contained only one image.",
+  "files": [{"name":"inverzia.jpg","source_url":"http://www.snowmagazin.sk/wp-content/gallery/kaprun-2010/inverzia.jpg","wayback_timestamp":"20150214021904","sha256":"996f6287029a7f4d8e5d8c25c2041b3ccf6f139286d6ed642a9fa81276b58ed4","bytes":57384,"width":720,"height":540,"format":"JPEG","drive_byte_audit":"verified"}]
+}
