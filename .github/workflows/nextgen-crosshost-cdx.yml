@@ -1,0 +1,115 @@
+name: NextGEN cross-host CDX discovery
+
+on:
+  push:
+    branches:
+      - nextgen-recovery-main-20260905
+    paths:
+      - '.github/workflows/nextgen-crosshost-cdx.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install requests
+      - name: Query Wayback CDX across historical hosts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv, io, json, random, time, zipfile
+          from collections import defaultdict
+          from pathlib import Path
+          from urllib.parse import urlsplit
+          import requests
+
+          src=Path('/tmp/src'); src.mkdir(parents=True,exist_ok=True)
+          with zipfile.ZipFile('nextgen_galerie/_recovery_sources/wayback-gallery-folders.zip') as z:
+              z.extractall(src)
+          folders=[r['folder'] for r in csv.DictReader((src/'gallery_folders.csv').open(encoding='utf-8'))]
+          hosts=['www.snowmagazin.sk','snowmagazin.sk','snowmagazin.relaxmagazin.sk','relaxmagazin.sk']
+          session=requests.Session()
+          session.headers.update({'User-Agent':'Snowmagazin archival recovery/1.0'})
+          out=Path('nextgen_crosshost_cdx'); out.mkdir(exist_ok=True)
+          rows=[]
+
+          def get(params):
+              last=''
+              for attempt in range(4):
+                  try:
+                      r=session.get('https://web.archive.org/cdx/search/cdx',params=params,timeout=45)
+                      if r.status_code==200:
+                          return r.json()
+                      last=f'HTTP {r.status_code}: {r.text[:160]}'
+                      if r.status_code not in (429,500,502,503,504): break
+                  except Exception as e:
+                      last=f'{type(e).__name__}: {e}'
+                  time.sleep(3 + attempt*5 + random.random()*2)
+              print('CDX failed',params.get('url'),last,flush=True)
+              return []
+
+          for fi,folder in enumerate(folders,1):
+              print(f'[{fi}/{len(folders)}] {folder}',flush=True)
+              for host in hosts:
+                  params={
+                      'url':f'{host}/wp-content/gallery/{folder}/',
+                      'matchType':'prefix','output':'json',
+                      'fl':'timestamp,original,statuscode,mimetype,digest,length',
+                      'filter':'statuscode:200','collapse':'digest','limit':'20000'
+                  }
+                  data=get(params)
+                  if not data or len(data)<2:
+                      time.sleep(.3); continue
+                  header=data[0]
+                  for vals in data[1:]:
+                      d=dict(zip(header,vals)); u=urlsplit(d.get('original',''))
+                      marker=f'/wp-content/gallery/{folder}/'
+                      if marker not in u.path: continue
+                      rel=u.path.split(marker,1)[1].lstrip('/')
+                      if not rel or rel.endswith('/'): continue
+                      kind='thumbnail' if '/thumbs/' in ('/'+rel) or rel.startswith('thumbs/') else 'original'
+                      rows.append({'folder':folder,'host_query':host,'relative_path':rel,'asset_kind':kind,**d})
+                  time.sleep(.3)
+
+          # dedupe identical capture facts
+          uniq={}
+          for r in rows:
+              key=(r['folder'],r['relative_path'].lower(),r['digest'],r['timestamp'],r['original'])
+              uniq[key]=r
+          rows=list(uniq.values())
+          fields=['folder','host_query','relative_path','asset_kind','timestamp','original','statuscode','mimetype','digest','length']
+          with (out/'crosshost_files.csv').open('w',encoding='utf-8',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=fields); w.writeheader(); w.writerows(sorted(rows,key=lambda r:(r['folder'],r['relative_path'],r['timestamp'])))
+          summary={}
+          for folder in folders:
+              rr=[r for r in rows if r['folder']==folder]
+              summary[folder]={
+                  'capture_records':len(rr),
+                  'unique_relative_paths':len({r['relative_path'].lower() for r in rr}),
+                  'unique_original_paths':len({r['relative_path'].lower() for r in rr if r['asset_kind']=='original'}),
+                  'unique_thumbnail_paths':len({r['relative_path'].lower() for r in rr if r['asset_kind']=='thumbnail'}),
+                  'hosts':sorted({urlsplit(r['original']).netloc for r in rr})
+              }
+          (out/'summary.json').write_text(json.dumps(summary,ensure_ascii=False,indent=2),encoding='utf-8')
+          print(json.dumps(summary,ensure_ascii=False,indent=2),flush=True)
+          PY
+      - name: Pack
+        run: zip -r nextgen-crosshost-cdx.zip nextgen_crosshost_cdx
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nextgen-crosshost-cdx-${{ github.run_id }}
+          path: |
+            nextgen_crosshost_cdx/
+            nextgen-crosshost-cdx.zip
+          compression-level: 0
+          retention-days: 90
+          if-no-files-found: error
