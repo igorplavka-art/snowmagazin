@@ -1,6 +1,11 @@
 name: NextGEN recovery batch
 
 on:
+  push:
+    branches:
+      - nextgen-recovery-main-20260905
+    paths:
+      - '.github/workflows/nextgen-recovery-batch.yml'
   workflow_dispatch:
     inputs:
       folders:
@@ -23,7 +28,7 @@ jobs:
       - run: python -m pip install requests pillow
       - name: Recover indexed NextGEN originals
         env:
-          FOLDERS: ${{ inputs.folders }}
+          FOLDERS: ${{ github.event_name == 'push' && '90-rokov-volkl,a-basin,elbrus-vystup' || inputs.folders }}
         shell: bash
         run: |
           set -euo pipefail
