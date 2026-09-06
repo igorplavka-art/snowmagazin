@@ -11,7 +11,7 @@ Every durable result created for this project must exist in both places:
 Never leave unique recovered data only in GitHub Actions artifacts. Artifacts are transport/staging only.
 
 ## Reference gallery
-`racibor` (NextGEN ID 66) is complete: 12/12 originals verified with hashes and mirrored to Drive. Do not re-recover it unless performing an audit.
+`racibor` (NextGEN ID 58) is complete: 12/12 originals verified with hashes and mirrored to Drive. Do not re-recover it unless performing an audit.
 
 ## Parallel-agent split
 Independent galleries may be processed by separate agents/worktrees. Prefer one gallery or a small non-overlapping gallery batch per agent. The orchestrator owns `nextgen_galerie/inventory.csv` and integration to avoid merge conflicts.
