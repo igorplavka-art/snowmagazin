@@ -1,0 +1,22 @@
+folder,verified_gallery_id,files_indexed,originals_indexed,thumbnails_indexed,known_min_images,drive_originals_present,status,source_run_id,source_artifact_id,drive_status,notes
+90-rokov-volkl,,2,0,2,2,0,thumbnail_evidence_only,33899806543,9947182649,pending,
+a-basin,,9,0,9,9,0,thumbnail_evidence_only,33899806543,9947182649,pending,
+elbrus-vystup,,26,0,26,26,0,thumbnail_evidence_only,33899806543,9947182649,pending,
+freeride-kemp-1-rocnik,,107,0,107,107,0,thumbnail_evidence_only,33899806543,9947182649,pending,
+freeride-kemp-2013,,18,0,18,18,0,thumbnail_evidence_only,33899806543,9947182649,pending,
+freeridove-lyze-2011,,5,0,5,5,0,thumbnail_evidence_only,33899806543,9947182649,pending,
+heiligenblut-grossglockner,,17,0,17,17,0,thumbnail_evidence_only,33899806543,9947182649,pending,
+hrustin-ski-zabava,,6,0,6,6,0,thumbnail_evidence_only,33899806543,9947182649,pending,
+ischgl-032014,,22,5,17,17,5,partial_drive_recovered,33899806543,9947182649,present_needs_hash_audit,
+ischgl-galtur-032014,,5,1,4,4,1,partial_drive_recovered,33899806543,9947182649,present_needs_hash_audit,
+ischgl-kappl-032014,,4,0,4,4,0,thumbnail_evidence_only,33899806543,9947182649,pending,
+ispo-winter-2014,,75,0,75,75,0,thumbnail_evidence_only,33899806543,9947182649,pending,
+julia-mancuso,,13,0,13,13,0,thumbnail_evidence_only,33899806543,9947182649,pending,
+kaprun-2010,,1,1,0,1,1,drive_recovered_needs_hash_audit,33899806543,9947182649,present_needs_hash_audit,
+kitzbuhel-2014,,27,2,25,25,2,partial_drive_recovered,33899806543,9947182649,present_needs_hash_audit,
+lyzovacka-v-stredisku-wagrain,,6,0,6,6,0,thumbnail_evidence_only,33899806543,9947182649,pending,
+martinky-1009,,8,0,8,8,0,thumbnail_evidence_only,33899806543,9947182649,pending,
+racibor,58,24,12,12,12,12,complete,33899806543,9947182649,verified,12/12 originals verified with SHA-256; Drive mirror verified
+ski-amade,,1,0,1,1,0,thumbnail_evidence_only,33899806543,9947182649,pending,
+snehove-gejziry-mesiaca-enceladus,,3,0,3,3,0,thumbnail_evidence_only,33899806543,9947182649,pending,
+zuberec-janovky,127,12,6,6,6,6,complete_archived_set,33899806543,9947182649,verified,6/6 archived originals byte-verified; live article shortcode confirms gallery ID 127
