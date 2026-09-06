@@ -1,0 +1,23 @@
+{
+  "folder_name": "a-basin",
+  "verified_gallery_id": 11,
+  "source_article_url": "https://snowmagazin.relaxmagazin.sk/serial-o-lyzovani-v-severnej-amerike-diel-2-arapahoe-basin/",
+  "source_article_title": "Seriál o lyžovaní v Severnej Amerike. Diel 2: Arapahoe Basin",
+  "article_shortcode_evidence": "[nggallery id=11]",
+  "gallery_id_confidence": "verified",
+  "status": "THUMBNAIL_EVIDENCE_ONLY",
+  "known_archived_unique_basenames": 9,
+  "recovered_original_count": 0,
+  "completeness_basis": "Current restored article shortcode plus archived article/folder mapping identify the NextGEN gallery. The Wayback folder index currently supplies thumbnail-path evidence for the listed basenames, but no full original is yet byte-verified.",
+  "files": [
+    {"name":"abasin-2009-131_orig.jpg","wayback_timestamp":"20171123091815","evidence_kind":"thumbnail","archived_url":"http://www.snowmagazin.sk/wp-content/gallery/a-basin/thumbs/thumbs_abasin-2009-131_orig.jpg","recovery_status":"missing_original"},
+    {"name":"abasin-2009-17_orig.jpg","wayback_timestamp":"20171123111359","evidence_kind":"thumbnail","archived_url":"http://www.snowmagazin.sk/wp-content/gallery/a-basin/thumbs/thumbs_abasin-2009-17_orig.jpg","recovery_status":"missing_original"},
+    {"name":"abasin-2009-377_orig.jpg","wayback_timestamp":"20171123100248","evidence_kind":"thumbnail","archived_url":"http://www.snowmagazin.sk/wp-content/gallery/a-basin/thumbs/thumbs_abasin-2009-377_orig.jpg","recovery_status":"missing_original"},
+    {"name":"abasin-2009-427_orig.jpg","wayback_timestamp":"20171123134738","evidence_kind":"thumbnail","archived_url":"http://www.snowmagazin.sk/wp-content/gallery/a-basin/thumbs/thumbs_abasin-2009-427_orig.jpg","recovery_status":"missing_original"},
+    {"name":"abasin-2009-441_orig.jpg","wayback_timestamp":"20171123172835","evidence_kind":"thumbnail","archived_url":"http://www.snowmagazin.sk/wp-content/gallery/a-basin/thumbs/thumbs_abasin-2009-441_orig.jpg","recovery_status":"missing_original"},
+    {"name":"abasin-2009-70_orig.jpg","wayback_timestamp":"20171123162645","evidence_kind":"thumbnail","archived_url":"http://www.snowmagazin.sk/wp-content/gallery/a-basin/thumbs/thumbs_abasin-2009-70_orig.jpg","recovery_status":"missing_original"},
+    {"name":"abasin-2009-94_orig.jpg","wayback_timestamp":"20171123125555","evidence_kind":"thumbnail","archived_url":"http://www.snowmagazin.sk/wp-content/gallery/a-basin/thumbs/thumbs_abasin-2009-94_orig.jpg","recovery_status":"missing_original"},
+    {"name":"multimedia_005_orig.jpg","wayback_timestamp":"20171123072930","evidence_kind":"thumbnail","archived_url":"http://www.snowmagazin.sk/wp-content/gallery/a-basin/thumbs/thumbs_multimedia_005_orig.jpg","recovery_status":"missing_original"},
+    {"name":"pziski01best_orig.jpg","wayback_timestamp":"20171123091846","evidence_kind":"thumbnail","archived_url":"http://www.snowmagazin.sk/wp-content/gallery/a-basin/thumbs/thumbs_pziski01best_orig.jpg","recovery_status":"missing_original"}
+  ]
+}
