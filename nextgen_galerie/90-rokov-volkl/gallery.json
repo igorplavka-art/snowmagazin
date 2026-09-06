@@ -1,0 +1,20 @@
+{
+  "folder_name": "90-rokov-volkl",
+  "verified_gallery_id": 209,
+  "source_article_url": "https://snowmagazin.relaxmagazin.sk/90-rokov-volkl-inovacie-s-tradiciou/",
+  "source_article_title": "90 rokov VÖLKL – inovácie s tradíciou",
+  "article_shortcode_evidence": "[nggallery id=209]",
+  "gallery_id_confidence": "verified",
+  "status": "PARTIAL_EVIDENCE_NO_ORIGINALS_BYTE_VERIFIED",
+  "wayback_index_unique_basenames": 2,
+  "article_extra_gallery_basenames": 2,
+  "known_unique_basenames_lower_bound": 4,
+  "recovered_original_count": 0,
+  "completeness_basis": "The current restored article has a single NextGEN shortcode ID 209. Two inline article images link directly to the historical /wp-content/gallery/90-rokov-volkl/ folder, while the Wayback folder index independently preserves two different thumbnail basenames. The union proves at least four historical filenames, but no full original is yet byte-verified.",
+  "files": [
+    {"name":"volkl_90_1964-65.jpg","evidence_kind":"wayback_thumbnail","wayback_timestamp":"20140819211536","evidence_url":"http://www.snowmagazin.sk/wp-content/gallery/90-rokov-volkl/thumbs/thumbs_volkl_90_1964-65.jpg","recovery_status":"missing_original"},
+    {"name":"volkl_90_vostra2.jpg","evidence_kind":"wayback_thumbnail","wayback_timestamp":"20140819211535","evidence_url":"http://www.snowmagazin.sk/wp-content/gallery/90-rokov-volkl/thumbs/thumbs_volkl_90_vostra2.jpg","recovery_status":"missing_original"},
+    {"name":"volkl_90_family.jpg","evidence_kind":"current_article_old_gallery_link","evidence_url":"https://www.snowmagazin.sk/wp-content/gallery/90-rokov-volkl/volkl_90_family.jpg","recovery_status":"missing_original"},
+    {"name":"volkl_90_franz.jpg","evidence_kind":"current_article_old_gallery_link","evidence_url":"https://www.snowmagazin.sk/wp-content/gallery/90-rokov-volkl/volkl_90_franz.jpg","recovery_status":"missing_original"}
+  ]
+}
