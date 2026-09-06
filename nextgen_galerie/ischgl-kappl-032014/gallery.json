@@ -1,0 +1,15 @@
+{
+  "folder_name": "ischgl-kappl-032014",
+  "verified_gallery_id": null,
+  "candidate_gallery_ids": [214,215,216],
+  "source_article_url": "https://snowmagazin.relaxmagazin.sk/rakusky-ischgl-lyziarske-stredisko-ktore-nikdy-nespi/",
+  "source_article_title": "Rakúsky Ischgl – lyžiarske stredisko, ktoré nikdy nespí",
+  "article_shortcode_evidence": ["[nggallery id=214]","[nggallery id=215]","[nggallery id=216]"],
+  "gallery_id_confidence": "article_set_candidate_folder_mapping_unresolved",
+  "status": "THUMBNAIL_EVIDENCE_ONLY",
+  "archive_index": {"indexed_asset_records":4,"original_records":0,"thumbnail_records":4,"unique_basenames":4,"original_thumbnail_overlap":0},
+  "recovered_original_count": 0,
+  "missing_original_candidates_from_archived_basenames": ["kappl1.jpg","kappl2.jpg","kappl3.jpg","kappl_detskysvet.jpg"],
+  "completeness_basis": "The article has three NextGEN IDs 214, 215 and 216 and discusses Kappl; the archive index contains ischgl-kappl-032014 thumbnails. No full original or one-to-one ID mapping is yet verified.",
+  "files": []
+}
