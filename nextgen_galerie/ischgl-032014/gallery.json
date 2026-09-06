@@ -1,0 +1,21 @@
+{
+  "folder_name": "ischgl-032014",
+  "verified_gallery_id": null,
+  "candidate_gallery_ids": [214,215,216],
+  "source_article_url": "https://snowmagazin.relaxmagazin.sk/rakusky-ischgl-lyziarske-stredisko-ktore-nikdy-nespi/",
+  "source_article_title": "Rakúsky Ischgl – lyžiarske stredisko, ktoré nikdy nespí",
+  "article_shortcode_evidence": ["[nggallery id=214]","[nggallery id=215]","[nggallery id=216]"],
+  "gallery_id_confidence": "article_set_verified_folder_mapping_unresolved",
+  "status": "PARTIAL_RECOVERY",
+  "archive_index": {"indexed_asset_records":22,"original_records":5,"thumbnail_records":17,"unique_basenames":18,"original_thumbnail_overlap":4},
+  "recovered_original_count": 5,
+  "missing_original_candidates_from_archived_basenames": ["ischgl1.jpg","ischgl3.jpg","ischgl4.jpg","ischgl5.jpg","ischgl6.jpg","ischgl7.jpg","ischgl8.jpg","ischgl_den.jpg","ischgl_noc1.jpg","ischgl_noc2.jpg","ischgl_obed_idalp.jpg","ischgl_vyhlad-_z_restauracie.jpg","smerovnik_z_lyzi.jpg"],
+  "completeness_basis": "The restored article contains three NextGEN IDs 214, 215 and 216. Its inline image links directly reference the ischgl-032014 folder, but available evidence does not yet prove which of the three IDs maps to this folder.",
+  "files": [
+    {"name":"ischgl0.jpg","source_url":"http://www.snowmagazin.sk/wp-content/gallery/ischgl-032014/ischgl0.jpg","wayback_timestamp":"20140819213958","sha256":"18335057081d77555493e66292d58eb02d89f9da01b35f35619f0c77dafca10a","bytes":104524,"width":1024,"height":768,"format":"JPEG","drive_byte_audit":"verified"},
+    {"name":"ischgl2_krizovatka_kabiniek.jpg","source_url":"http://www.snowmagazin.sk/wp-content/gallery/ischgl-032014/ischgl2_krizovatka_kabiniek.jpg","wayback_timestamp":"20140819214817","sha256":"d9504705943e3ab494d52c223456113c4d530eb84c44249b5125f64ff84eb049","bytes":111852,"width":1024,"height":683,"format":"JPEG","drive_byte_audit":"verified"},
+    {"name":"ischgl9.jpg","source_url":"http://www.snowmagazin.sk/wp-content/gallery/ischgl-032014/ischgl9.jpg","wayback_timestamp":"20140819214512","sha256":"f04dfdb5068c42d9026b4799666ff780df159abf7a7a67ad3f241c959493319f","bytes":98068,"width":1024,"height":768,"format":"JPEG","drive_byte_audit":"verified"},
+    {"name":"ischgl_apres_-ski_kuhstall.jpg","source_url":"http://www.snowmagazin.sk/wp-content/gallery/ischgl-032014/ischgl_apres_-ski_kuhstall.jpg","wayback_timestamp":"20140819220153","sha256":"3554db1c351ee6cdbff20857f934c17c5bec29b2875c327ab548b50604e33168","bytes":135035,"width":1024,"height":768,"format":"JPEG","drive_byte_audit":"verified"},
+    {"name":"ischgl_koncert_podium.jpg","source_url":"http://www.snowmagazin.sk/wp-content/gallery/ischgl-032014/ischgl_koncert_podium.jpg","wayback_timestamp":"20140819220854","sha256":"bd215fe8e8e303af18e1916488619727dc1dd07604f9a4a3c6312c114c27eb63","bytes":199513,"width":1024,"height":707,"format":"JPEG","drive_byte_audit":"verified"}
+  ]
+}
