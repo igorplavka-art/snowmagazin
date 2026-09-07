@@ -1,0 +1,18 @@
+{
+  "gallery_folder": "elbrus-vystup",
+  "verified_gallery_id": 7,
+  "source_type": "gmail_attachment_set",
+  "gmail_message_id": "125e65aae7eefa77",
+  "gmail_subject": "Foto priloha 2 (Elbrus - vrchol)",
+  "gmail_date": "2009-12-31",
+  "classification": "SOURCE_CANDIDATE_NOT_YET_MATCHED",
+  "note": "Large original JPEGs from the Elbrus expedition. No unambiguous visual match was found against the currently recovered NextGEN thumbnails 1 and 10-16, so these are preserved as source candidates and are not counted as verified NextGEN originals yet.",
+  "files": [
+    {"filename":"P5020032.JPG","size_bytes":836636,"sha256":"a3982d9f47a660d7bc572b75c0be331d5cbefb1f7612295f8c71b8f71ba8ad2b"},
+    {"filename":"D20_0075.JPG","size_bytes":1415272,"sha256":"f6561760a4b41d58e9a8d0de5c353532982524c17a642071fe7231351e67d733"},
+    {"filename":"D20_0071.JPG","size_bytes":2599808,"sha256":"5ee16fb8b46b66b4886049bbf0eccb0e58a7425ef9e56ed993b9d35fd05abd3f"},
+    {"filename":"D20_0070.JPG","size_bytes":2548713,"sha256":"3d8b7283c4b9da993fe45fd28982dafaffd0d63ad986e379b70cf275d8e404bb"},
+    {"filename":"D20_0066.JPG","size_bytes":2132538,"sha256":"124def3de1cb660565ea740c990357948ceea3188dee250d919dfe7b5612240e"},
+    {"filename":"D20_0063.JPG","size_bytes":2214288,"sha256":"784d1b6a9e8beb06661c0a602110a9e82903cbfb3eea4a1657b583a989e154e5"}
+  ]
+}
