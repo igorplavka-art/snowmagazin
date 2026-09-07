@@ -1,0 +1,31 @@
+{
+  "folder_name": "freeride-kemp-2013",
+  "gallery_id": 204,
+  "gallery_id_confidence": "probable_not_yet_folder-verified",
+  "gallery_id_evidence": "Recovered unresolved-id mapping ties [nggallery id=204] to the article /freeride-kemp-v-jasnej/, but the historical folder mapping to freeride-kemp-2013 has not yet been independently proven.",
+  "source_article_url": "https://snowmagazin.relaxmagazin.sk/freeride-kemp-v-jasnej/",
+  "status": "PARTIAL_RECOVERY",
+  "known_archived_unique_basenames": 18,
+  "recovered_original_count": 5,
+  "recovery_note": "Five full-size originals are byte-verified and mirrored on Google Drive. Three are bit-identical to the seven-photo Gmail source set sent on 2013-09-18 under pre-import names freeride_kemp_1.jpg, freeride_kemp_4.jpg and freeride_kemp_6.jpg. Two more were recovered under exact NextGEN basenames.",
+  "files": [
+    {"name":"chopok.jpg","recovery_status":"verified_original","size_bytes":75910,"sha256":"7cba8fec42389e7cf216cc21c6ed31ce224c1c3facad6fb7f4817e17360dc7a5","evidence":"recovered under exact NextGEN basename from Gmail/Drive search"},
+    {"name":"chopok_freeride.jpg","recovery_status":"missing_original","evidence":"Wayback thumbnail-path inventory"},
+    {"name":"freeride_lesy_chopok_juh.jpg","recovery_status":"verified_original","size_bytes":116367,"sha256":"32703c22f907c7f056fb68c5a40e6e40d85434ffa8b09fefd8080739a879c18f","evidence":"bit-identical to Gmail source freeride_kemp_1.jpg"},
+    {"name":"freeride_lukova.jpg","recovery_status":"missing_original","evidence":"Wayback thumbnail-path inventory"},
+    {"name":"freeride_lukova_kotlina.jpg","recovery_status":"missing_original","evidence":"Wayback thumbnail-path inventory"},
+    {"name":"freeride_v_lukovej.jpg","recovery_status":"verified_original","size_bytes":72669,"sha256":"816c8ee9d1ceace78935b4732242d0bee059db04d77dfef868b49007acc5dfe7","evidence":"bit-identical to Gmail source freeride_kemp_6.jpg"},
+    {"name":"jazdenie.jpg","recovery_status":"missing_original","evidence":"Wayback thumbnail-path inventory"},
+    {"name":"kamenna_chata.jpg","recovery_status":"verified_original","size_bytes":63644,"sha256":"49a4efcc58a4c283bacffc45cd74c6a66f0dfb7625e8e402f23b39617d5a2516","evidence":"bit-identical to Gmail source freeride_kemp_4.jpg"},
+    {"name":"kamennachata_jump.jpg","recovery_status":"missing_original","evidence":"Wayback thumbnail-path inventory"},
+    {"name":"kamziky.jpg","recovery_status":"missing_original","evidence":"Wayback thumbnail-path inventory"},
+    {"name":"kemkp_ucastnici.jpg","recovery_status":"missing_original","evidence":"Wayback thumbnail-path inventory"},
+    {"name":"kemp_ucastnici.jpg","recovery_status":"verified_original","size_bytes":122094,"sha256":"b570605bff3134b9d45b99450437eb3c0ddf38cce8ee0496671e461cafb568e9","evidence":"recovered under exact NextGEN basename from Gmail/Drive search"},
+    {"name":"lukova_kotlina.jpg","recovery_status":"missing_original","evidence":"Wayback thumbnail-path inventory"},
+    {"name":"pivo_na_kamennej_chate.jpg","recovery_status":"missing_original","evidence":"Wayback thumbnail-path inventory"},
+    {"name":"telemark.jpg","recovery_status":"missing_original","evidence":"Wayback thumbnail-path inventory"},
+    {"name":"ucastnici_kempu.jpg","recovery_status":"missing_original","evidence":"Wayback thumbnail-path inventory"},
+    {"name":"ucastnik_kempu_telemark.jpg","recovery_status":"missing_original","evidence":"Wayback thumbnail-path inventory"},
+    {"name":"uspesne_jazdenie_zlaby.jpg","recovery_status":"missing_original","evidence":"Wayback thumbnail-path inventory"}
+  ]
+}
